@@ -1,71 +1,143 @@
+from utils.classes import Source
+from enum import Enum
 import json
+from utils.constants import log_manager
 import numpy as np
+from utils.enums import LogCode, SourceMode, SensorMode
+
+
+class GazeSubmode(Enum):
+    OUTPUT_DUMP = "OUTPUT_DUMP"
+    INPUT_DUMP = "INPUT_DUMP"
 
 
 class GazeTracking:
-    def __init__(self, extrinsic_source, position_source):
-        """Initialize the GazeTracking object.
+    """Class responsible gaze tracking analysis.
 
-        Args:
-            extrinsic_source (str): Path to the extrinsic parameters JSON file.
-            position_source (str): Path to the camera positions JSON file.
-
-        Attributes:
+    Attributes:
             extrinsic_data (dict): Extrinsic parameters of the cameras.
             position_data (dict): Positions of the cameras.
             world_coordinates (dict): World coordinates of the cameras.
+    """
 
-        Raises:
-            FileNotFoundError: If the JSON files are not found.
-        """
-        try:
-            self.load_data(extrinsic_source, position_source)
-        except FileNotFoundError:
-            print("File for offline analysis not found")
-
-        self.world_coordinates = {}
-
-    def load_data(self, extrinsic_path, position_path):
-        """Load extrinsic and position data from JSON files.
+    def __init__(
+        self,
+        extrinsic_source: Source = None,
+        position_source: Source = None,
+        gaze_world_dump_path: str = None,
+    ):
+        """Initialize the GazeTracking object.
 
         Args:
-            extrinsic_path (str): Path to the extrinsic parameters JSON file.
-            position_path (str): Path to the camera positions JSON file.
+            extrinsic_source (utils.classes.Source): Object containing information about the extrinsic parameters source.
+            position_source (utils.classes.Source): Object containing information about the position parameters source.
+            gaze_world_dump_path (str): Path of the coordinates of gaze w.r.t. the world.
+            verbose (bool): if True, logs are printed during operations.
         """
 
-        with open(extrinsic_path, "r") as f:
-            self.extrinsic_data = json.load(f)
-        with open(position_path, "r") as f:
-            self.position_data = json.load(f)
+        default = True
 
-    def set_world_coordinates(self, world_coordinates_source):
-        """Set the world coordinates of the cameras.
+        if gaze_world_dump_path:
+            try:
+                self.gaze_world_coordinates = self.load_data(gaze_world_dump_path)
+                self.world_path = gaze_world_dump_path
+                self.extrinsic_data = None
+                self.position_data = None
+                self.mode = SensorMode.OFFLINE_DUMP
+                self.submode = GazeSubmode.OUTPUT_DUMP
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.SUCCESS,
+                    0,
+                    "Dumped gaze world coordinates loaded successfully",
+                )
+                return
+            except:
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.ERROR,
+                    0,
+                    "Gaze world coordinates not loaded",
+                )
+
+        if default:
+            self.world_path = None
+            self.gaze_world_coordinates = None
+
+        default = True
+        if (
+            extrinsic_source
+            and position_source
+            and extrinsic_source.mode == SourceMode.DUMP
+            and position_source.mode == SourceMode.DUMP
+        ):
+            try:
+                self.extrinsic_data = self.load_data(extrinsic_source.path)
+                self.position_data = self.load_data(position_source.path)
+                self.extrinsic_path = extrinsic_source.path
+                self.position_path = position_source.path
+                self.mode = SensorMode.OFFLINE_DUMP
+                self.submode = GazeSubmode.INPUT_DUMP
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.SUCCESS,
+                    1,
+                    "Dumped cameras data loaded successfully",
+                )
+                return
+            except:
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.ERROR,
+                    1,
+                    "Cameras data dump not loaded",
+                )
+
+        if default:
+            self.extrinsic_path = None
+            self.position_path = None
+            self.extrinsic_data = {}
+            self.position_data = {}
+
+    def load_data(self, data_path):
+        """Load data from JSON files.
 
         Args:
-            world_coordinates_source (str): Path to the world coordinates JSON file.
+            data_path (str): Path to data in a JSON file.
+
+        Returns:
+            dict: data from JSON
         """
 
-        with open(world_coordinates_source, "r") as f:
-            self.world_coordinates = json.load(f)
+        if data_path is None:
+            raise FileNotFoundError
 
-    def get_world_coordinates(self, dump=False, force=False):
+        with open(data_path, "r") as f:
+            return json.load(f)
+
+    def compute_world_coordinates(self, dump: str = None, new_file=True, force=False):
         """Calculate the world coordinates of the cameras.
 
         Args:
-            dump (bool): If True, print the world coordinates.
+            dump (str): If specified, save the world coordinates in that JSON file.
             force (bool): If True, recalculate the world coordinates.
 
         Returns:
-            dict: World coordinates of the cameras.
+            dict[str, dict[str, list[list[float]]]]: World coordinates of the cameras.
         """
 
-        # If the world coordinates are already calculated and force is False, return them
-        if self.world_coordinates and not force:
-            return self.world_coordinates
+        # If force is False return the gaze world coordinates which are already calculated
+        if self.gaze_world_coordinates and not force:
+            log_manager.log(
+                self.__class__.__name__, LogCode.SUCCESS, 2, "Old data returned"
+            )
+            return self.gaze_world_coordinates
+        else:
+            self.gaze_world_coordinates = {}
 
         # Iterate over the frames and cameras to calculate the world coordinates
         for frame_id, cameras in self.position_data.items():
-            self.world_coordinates[frame_id] = {}
+            self.gaze_world_coordinates[frame_id] = {}
             for camera_id, position in cameras.items():
                 # Convert the position to a 4D vector with the fourth component set to 1
                 position_4d = np.append(position, 1)
@@ -74,12 +146,27 @@ class GazeTracking:
                 extrinsic_matrix = np.array(self.extrinsic_data[frame_id][camera_id])
 
                 # Compute the derived coordinates by multiplying the matrix by the position vector
-                self.world_coordinates[frame_id][camera_id] = np.dot(
+                self.gaze_world_coordinates[frame_id][camera_id] = np.dot(
                     extrinsic_matrix, position_4d
                 ).tolist()
 
         # Dump in a json the world coordinates if requested
-        if dump:
-            json.dumps(self.world_coordinates, indent=4)
+        if dump is not None:
+            try:
+                with open(dump, "w" if new_file else "a") as f:
+                    json.dump(self.gaze_world_coordinates, f)
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.SUCCESS,
+                    3,
+                    "Output gaze world coordinates dumped succesfully",
+                )
+            except:
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.ERROR,
+                    3,
+                    "Dump of gaze world coordinates failed",
+                )
 
-        return self.world_coordinates
+        return self.gaze_world_coordinates
