@@ -1,9 +1,10 @@
-from utils.classes import Source
 from enum import Enum
 import json
-from utils.constants import log_manager
 import numpy as np
+from utils.classes import Source
+from utils.constants import log_manager
 from utils.enums import LogCode, SourceMode, SensorMode
+from utils.functions import load_dump
 
 
 class GazeSubmode(Enum):
@@ -39,7 +40,7 @@ class GazeTracking:
 
         if gaze_world_dump_path:
             try:
-                self.gaze_world_coordinates = self.load_data(gaze_world_dump_path)
+                self.gaze_world_coordinates = load_dump(gaze_world_dump_path)
                 self.world_path = gaze_world_dump_path
                 self.extrinsic_data = None
                 self.position_data = None
@@ -72,8 +73,8 @@ class GazeTracking:
             and position_source.mode == SourceMode.DUMP
         ):
             try:
-                self.extrinsic_data = self.load_data(extrinsic_source.path)
-                self.position_data = self.load_data(position_source.path)
+                self.extrinsic_data = load_dump(extrinsic_source.path)
+                self.position_data = load_dump(position_source.path)
                 self.extrinsic_path = extrinsic_source.path
                 self.position_path = position_source.path
                 self.mode = SensorMode.OFFLINE_DUMP
@@ -98,22 +99,6 @@ class GazeTracking:
             self.position_path = None
             self.extrinsic_data = {}
             self.position_data = {}
-
-    def load_data(self, data_path):
-        """Load data from JSON files.
-
-        Args:
-            data_path (str): Path to data in a JSON file.
-
-        Returns:
-            dict: data from JSON
-        """
-
-        if data_path is None:
-            raise FileNotFoundError
-
-        with open(data_path, "r") as f:
-            return json.load(f)
 
     def compute_world_coordinates(self, dump: str = None, new_file=True, force=False):
         """Calculate the world coordinates of the cameras.

@@ -1,5 +1,5 @@
-from utils.enums import LogCode, SourceMode
 from datetime import datetime
+from utils.enums import LogCode, SourceMode
 
 
 class LogManager:
