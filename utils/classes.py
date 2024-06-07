@@ -69,13 +69,32 @@ class Source:
             path (str): file path where the data source is stored
     """
 
-    def __init__(self, mode: SourceMode, path: str = None):
+    def __init__(self, mode: SourceMode):
         """Initialize the Source object.
 
         Args:
-            extrinsic_source (utils.classes.Source): Object containing information about the extrinsic parameters source.
-            position_source (utils.classes.Source): Path to the camera positions JSON file.
+            mode (SourceMode): source mode
         """
 
         self.mode = mode
+
+
+class FileSource(Source):
+    """Class responsible for storing data source information.
+
+    Attributes:
+            path (str): file path where the data source is stored
+            new_file (bool): if Source is used for saving data, specify if an eventual old file is cleared or not
+    """
+
+    def __init__(self, mode: SourceMode, path: str = None, new_file=False):
+        """Initialize the Source object.
+
+        Args:
+            mode (SourceMode): source mode
+            path (str): file path where the data source is stored
+        """
+
+        super().__init__(mode)
         self.path = path
+        self.new_file = new_file
