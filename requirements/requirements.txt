@@ -1,0 +1,8 @@
+--find-links https://download.pytorch.org/whl/cu118/torch_stable.html
+
+mediapipe == 0.10.14
+numpy == 1.26.4
+opencv_python == 4.10.0.82
+openmim == 0.3.9
+
+mmengine == 0.10.4

@@ -9,6 +9,8 @@ class LogCode(Enum):
 
 class SourceMode(Enum):
     DUMP = "DUMP"
+    VIDEO = "VIDEO"
+    MODEL = "MODEL"
 
 
 class SensorMode(Enum):

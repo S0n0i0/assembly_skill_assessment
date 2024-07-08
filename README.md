@@ -6,17 +6,21 @@ Master's degree thesis at the University of Trento. This project is about creati
 
 ### Installation
 
-1. Firstly, you need clone the repository
+1. Firstly, you need clone the repository and enter it
    ```sh
    git clone https://github.com/S0n0i0/assembly_skill_assessment
+   cd assembly_skill_assessment
    ```
-2. In the folder where assembly_skill_assessment is located (in ../assembly_skill_assessment) execute:
+2. Execute the following command:
    ```sh
-   pip install -e assembly_skill_assessment
+   pip install -e .
    ```
-3. Return in the assembly_skill_assessment directory and install requirements
+3. Install requirements considering if you have:
+
+   - CUDA 11.8:
+
    ```sh
-   pip install -r requirements.txt
+   pip install -r gpu.txt
    ```
 
 ### Usage

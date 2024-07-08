@@ -1,0 +1,11 @@
+--find-links https://download.pytorch.org/whl/cu118/torch_stable.html
+
+-r requirements.txt
+torch==2.0.0+cu118
+torchvision==0.15.1+cu118
+torchaudio==2.0.1+cu118
+
+
+mmcv == 2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.0/index.html
+mmdet == 3.3.0 -f https://download.openmmlab.com/mmdet/dist/cu118/torch2.0/index.html
+mmpose == 1.3.1 -f https://download.openmmlab.com/mmpose/dist/cu118/torch2.0/index.html

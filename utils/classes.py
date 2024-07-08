@@ -78,6 +78,19 @@ class Source:
 
         self.mode = mode
 
+    @staticmethod
+    def compare(source1, source2):
+        """Compare two sources.
+
+        Args:
+            source1 (Source): first source to compare
+            source2 (Source): second source to compare
+
+        Returns:
+            bool: True if sources are equal, False otherwise
+        """
+        return source1 and source2 and source1.mode == source2.mode
+
 
 class FileSource(Source):
     """Class responsible for storing data source information.
@@ -98,3 +111,16 @@ class FileSource(Source):
         super().__init__(mode)
         self.path = path
         self.new_file = new_file
+
+    @staticmethod
+    def compare(source1, source2):
+        """Compare two sources.
+
+        Args:
+            source1 (FileSource): first source to compare
+            source2 (FileSource): second source to compare
+
+        Returns:
+            bool: True if sources are equal, False otherwise
+        """
+        return Source.compare(source1, source2) and source1.path == source2.path

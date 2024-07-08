@@ -283,3 +283,19 @@ class GazeTracking:
                 )
 
         return (self.cameras_world_data, self.gaze_world_data)
+
+
+if __name__ == "__main__":
+    ed = FileSource(
+        SourceMode.DUMP,
+        "../nusar-2021_action_both_9065-b05a_9095_user_id_2021-02-17_122813_e.json",
+    )
+    pd = FileSource(
+        SourceMode.DUMP,
+        "../nusar-2021_action_both_9065-b05a_9095_user_id_2021-02-17_122813_p.json",
+    )
+    a = GazeTracking(ed, pd)
+    cameras_dump = FileSource(SourceMode.DUMP, "../cameras_dump.json", True)
+    gaze_dump = FileSource(SourceMode.DUMP, "../gaze_dump.json", True)
+
+    a.compute_world_data(False, cameras_dump, gaze_dump, 2)
