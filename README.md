@@ -15,7 +15,11 @@ Master's degree thesis at the University of Trento. This project is about creati
    ```sh
    pip install -e .
    ```
-3. Install requirements considering if you have:
+3. Execute the following command:
+   ```sh
+   pip install wheel==0.43.0
+   ```
+4. Install requirements considering if you have:
 
    - CUDA 11.8:
 

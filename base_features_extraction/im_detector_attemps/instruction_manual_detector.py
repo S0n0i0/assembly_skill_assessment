@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import os
+from utils.classes import VideoReader
 
 
 def preprocess_image(image, mask, threshold):
@@ -81,75 +82,6 @@ def get_bb(image, mask, min_area=20, max_area=400):
             filtered_contours.append(contour)
 
     return filtered_contours, output_image  # """
-
-
-class VideoReader:
-    def __init__(self, video_path, frame=0, grey_scale=True):
-        self.video = cv2.VideoCapture(video_path)
-        self.path = video_path
-
-        if not self.video.isOpened():
-            print("Impossibile aprire il video:", video_path)
-            self.video = None
-        else:
-            self.grey_scale = grey_scale
-            if frame > 0:
-                self.video.set(cv2.CAP_PROP_POS_FRAMES, frame)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.video is None:
-            return None
-        else:
-            ret, frame = self.read()
-            if not ret:
-                raise StopIteration
-            return frame
-
-    def __del__(self):
-        if self.video is not None:
-            self.video.release()
-
-    def read(self):
-        if self.video is None:
-            return None
-        else:
-            ret, frame = self.video.read()
-            if not ret:
-                return None
-            if self.grey_scale:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            return frame
-
-    def get_index_frame(self):
-        return self.video.get(cv2.CAP_PROP_POS_FRAMES)
-
-    def get_frame(self, frame=None):
-        # Apri il video in bianco e nero
-        # Vai al frame specificato
-
-        if self.video is None:
-            return None
-        elif frame is None:
-            frame = self.read()
-            if frame is None:
-                return None
-        elif frame > 0:
-            self.video.set(cv2.CAP_PROP_POS_FRAMES, frame)
-            frame = self.read()
-
-            if frame is None:
-                return None
-
-            # trasforma il frame in scala di grigi
-            if self.grey_scale:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        else:
-            return None
-
-        return frame
 
 
 def get_white_area(image):
