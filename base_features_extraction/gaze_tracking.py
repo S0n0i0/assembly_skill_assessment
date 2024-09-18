@@ -7,7 +7,7 @@ import numpy as np
 from utils.classes import BoundingBox, ChannelHandler, FileSource, Source, VideoReader
 from utils.constants import log_manager
 from utils.enums import DisplayLevel, LogCode, SensorMode, SourceMode
-from utils.functions import get_derived_SM, load_dump
+from utils.functions import get_derived_SM, load_dump, compute_distance
 
 
 class GazeOpCode(Enum):
@@ -327,6 +327,7 @@ class GazeObjectTracking:
                     )
                     self.gaze = ChannelHandler()
                     self.objects = ChannelHandler()
+                    self.last_coordinates = None
                     log_manager.log(
                         self.__class__.__name__,
                         LogCode.SUCCESS,
@@ -385,8 +386,21 @@ class GazeObjectTracking:
                                 "camera_name": self.camera_name,
                                 "width": tmp_frame.shape[1],
                                 "height": tmp_frame.shape[0],
+                                "gaze_coordinates": (
+                                    tmp_frame.shape[1] // 2,
+                                    tmp_frame.shape[0] // 2,
+                                ),
                                 "proximity_threshold": gaze_source.params[
                                     "proximity_threshold"
+                                ],
+                                "approaching_threshold": gaze_source.params[
+                                    "approaching_threshold"
+                                ],
+                                "coordinates_memory_size": gaze_source.params[
+                                    "coordinates_memory_size"
+                                ],
+                                "correct_directions": gaze_source.params[
+                                    "correct_directions"
                                 ],
                             },
                             gaze_source.path,
@@ -493,6 +507,7 @@ class GazeObjectTracking:
         self.gaze_target.mode = (
             tmp_mode if tmp_mode is not SensorMode.OFFLINE_DUMP else SensorMode.OFFLINE
         )
+        self.last_coordinates: dict[float, tuple[float, float]] = {}
 
         if self.is_initialized():
             atexit.register(self.dump_data)
@@ -505,6 +520,37 @@ class GazeObjectTracking:
             and self.camera_name != None
             and (self.objects.mode == SourceMode.DUMP or self.tracker != None)
         )
+
+    def memorize_coordinates(
+        self, frame_index: float, coordinates: tuple[float, float]
+    ):
+        if self.gaze.data["coordinates_memory_size"] == 0:
+            return
+        if (
+            len(self.last_coordinates.keys())
+            == self.gaze.data["coordinates_memory_size"]
+        ):
+            self.last_coordinates.pop(min(self.last_coordinates.keys()))
+        self.last_coordinates[frame_index] = coordinates
+
+    def is_object_coming(self) -> bool:
+        if len(self.last_coordinates) == 0:
+            return None
+
+        correct_directions = 0
+        frames = [
+            self.last_coordinates[key] for key in sorted(self.last_coordinates.keys())
+        ]
+        previous_distance = compute_distance(
+            self.gaze.data["gaze_coordinates"], frames[0]
+        )
+        for f in frames[1:]:
+            actual_distance = compute_distance(self.gaze.data["gaze_coordinates"], f)
+            if actual_distance < previous_distance:
+                correct_directions += 1
+            previous_distance = actual_distance
+
+        return correct_directions >= self.gaze.data["correct_directions"]
 
     def compute_gaze_target(
         self,
@@ -563,12 +609,16 @@ class GazeObjectTracking:
 
         object_target = None
         if object_bbox is not None:
+            self.memorize_coordinates(frame_index, object_bbox.get_center())
             if (
-                object_bbox.get_distance(
-                    (self.gaze.data["width"] // 2, self.gaze.data["height"] // 2)
-                )
-                < self.gaze.data["proximity_threshold"]
-            ):
+                object_bbox.get_distance(self.gaze.data["gaze_coordinates"])
+                < self.gaze.data["approaching_threshold"]
+                and self.is_object_coming()
+            ) or object_bbox.get_distance(
+                self.gaze.data["gaze_coordinates"]
+            ) < self.gaze.data[
+                "proximity_threshold"
+            ]:
                 object_target = GazeTarget.INSTRUCTION_MANUAL.value
             else:
                 object_target = GazeTarget.OTHER.value
@@ -687,6 +737,9 @@ if __name__ == "__main__":
             "data/dump/gaze_dump.json",
             {
                 "proximity_threshold": 40,
+                "approaching_threshold": 60,
+                "coordinates_memory_size": 15,
+                "correct_directions": 10,
             },
         )
         objects = FileSource(

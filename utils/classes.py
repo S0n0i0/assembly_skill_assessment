@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import Enum
 
 from utils.enums import LogCode, SourceMode, SensorMode, DisplayLevel
+from utils.functions import compute_distance
 
 
 class LogManager:
@@ -405,4 +406,4 @@ class BoundingBox:
             float: The Euclidean distance.
         """
         center = self.get_center()
-        return ((center[0] - point[0]) ** 2 + (center[1] - point[1]) ** 2) ** 0.5
+        return compute_distance(center, point)

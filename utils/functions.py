@@ -1,8 +1,7 @@
 import json
 import numpy as np
 
-from utils.classes import ChannelHandler
-from utils.enums import SensorMode, SourceMode
+from utils.enums import SensorMode
 
 
 def load_dump(data_path):
@@ -33,3 +32,7 @@ def np_default(obj):
     if isinstance(obj, np.float32):
         return float(obj)
     raise TypeError("Unserializable object {} of type {}".format(obj, type(obj)))
+
+
+def compute_distance(p1: tuple[float, float], p2: tuple[float, float]):
+    return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
