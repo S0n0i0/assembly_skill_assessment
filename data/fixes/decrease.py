@@ -1,7 +1,5 @@
 import os
 import ffmpeg
-import paramiko
-import paramiko.client
 
 
 def decrease_fps_and_send(
@@ -62,7 +60,7 @@ def decrease_fps_and_send(
                     no_proper_videos.flush()
                 elif len(files) > 0:
                     print(
-                        "Copying directory n. "
+                        "\nCopying directory n. "
                         + str(i)
                         + "/"
                         + str(len(directories))
@@ -70,7 +68,6 @@ def decrease_fps_and_send(
                         + target_dir
                         + ")"
                     )
-                    print()
                     # Iterate over the files
                     for file in files:
                         # Construct the input and output paths
@@ -81,16 +78,17 @@ def decrease_fps_and_send(
                             output_directory, directory, file
                         ).replace("\\", "/")
 
+                        print("Processing", input_path)
                         # Decrease the resolution and the fps using ffmpeg-python
                         (
                             ffmpeg.input(input_path)
                             .filter("scale", width=640, height=360)
                             .filter("fps", fps=15, round="up")
-                            .output(output_path)
+                            .output(output_path, vcodec="h264_nvenc", loglevel="quiet")
                             .run()
                         )
 
 
 # Example usage
-decrease_fps_and_send("E:/data/tmp", "D:/data/tmp", "no_proper_viedos.txt")
+decrease_fps_and_send("C:/tmp", "D:/data/fixed_recordings", "no_proper_viedos.txt")
 print("Done")

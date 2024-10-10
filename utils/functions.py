@@ -1,5 +1,6 @@
 import json
 import numpy as np
+from itertools import chain, combinations
 
 from utils.enums import SensorMode
 
@@ -36,3 +37,12 @@ def np_default(obj):
 
 def compute_distance(p1: tuple[float, float], p2: tuple[float, float]):
     return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
+
+
+def all_subsets(people_split, start_from=2, all_elements=True):
+    return chain(
+        *map(
+            lambda x: combinations(people_split, x),
+            range(start_from, len(people_split) + (1 if all_elements else 0)),
+        )
+    )
