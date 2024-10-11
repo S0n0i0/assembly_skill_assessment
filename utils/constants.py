@@ -22,6 +22,7 @@ first_lines = {
     "splits": {
         "train": trainval_first_line,
         "validation": trainval_first_line,
+        "trainval": trainval_first_line,
         "validation_challenge": trainval_first_line,
         "test": [
             "id",
