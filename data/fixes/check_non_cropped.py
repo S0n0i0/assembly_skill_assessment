@@ -1,5 +1,7 @@
 import os
 
+from utils.classes import Sequence
+
 not_used_path = "D:/data/annotations/coarse-annotations/not_used_videos.csv"
 coarse_labels_path = "D:/data/annotations/coarse-annotations/coarse_labels/"
 
@@ -24,16 +26,16 @@ else:
     print("Some non-cropped videos are in the coarse labels.")
     print(diff)
 
-present_people = set([s.split("_")[4] for s in coarse_labels])
+present_people = set([Sequence(s).person for s in coarse_labels])
 print(f"Total people ({len(present_people)})")
-not_cropped_people = set([s.split("_")[4] for s in not_cropped])
+not_cropped_people = set([Sequence(s).person for s in not_cropped])
 print(f"People with non-cropped videos ({len(not_cropped_people)})")
 missing_people = not_cropped_people - present_people
 print(f"- People with all videos not cropped: {len(missing_people)}")
 
 not_cropped_by_people = {p: [] for p in not_cropped_people}
 for v in not_cropped:
-    not_cropped_by_people[v.split("_")[4]].append(v)
+    not_cropped_by_people[Sequence(v).person].append(v)
 
 non_cropped_counter = {}
 for p in not_cropped_by_people:

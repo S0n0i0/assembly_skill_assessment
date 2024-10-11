@@ -1,5 +1,7 @@
 import os
 
+from utils.classes import Sequence
+
 sequences_directory = "D:/data/ego_recordings/"
 fine_directory = "D:/data/annotations/action_anticipation/"
 splits = ["train", "validation", "validation_challenge", "test", "test_challenge"]
@@ -11,7 +13,7 @@ sequences = set(
         if os.path.isdir(os.path.join(sequences_directory, d))
     ]
 )
-total_peoples = set([d.split("_")[4] for d in sequences])
+total_peoples = set([Sequence(d).person for d in sequences])
 
 for split in splits:
     with open(fine_directory + f"{split}.csv", "r") as f:
@@ -21,7 +23,7 @@ for split in splits:
 
 
 print("Videos absent from annotations:", len(sequences))
-peoples = set([d.split("_")[4] for d in sequences])
+peoples = set([Sequence(d).person for d in sequences])
 missing_peoples = total_peoples - peoples
 print(
     "People with no videos in annotations:",

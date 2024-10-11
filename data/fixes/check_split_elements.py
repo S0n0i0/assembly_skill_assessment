@@ -1,6 +1,7 @@
 import json
 
 from utils.functions import all_subsets
+from utils.classes import Sequence
 
 
 def get_elements(lines: list[str], user_id_extractor, no_first_line):
@@ -37,33 +38,33 @@ if project == "recognition":
     splits = ["train", "validation", "test"]
     file_format = "D:/data/annotations/action_recognition/{split}_mono.txt"
     if subject == "people":
-        user_id_extractor = lambda x: x.strip().split("_")[4]
+        user_id_extractor = lambda x: Sequence(x.strip()).person
     elif subject == "toys":
-        user_id_extractor = lambda x: x.strip().split("_")[3].split("-")[1]
+        user_id_extractor = lambda x: Sequence(x.strip()).toy
     no_first_line = False
 elif project == "anticipation":
     splits = ["train", "validation", "test"]
     file_format = "D:/data/annotations/action_anticipation/{split}.csv"
     if subject == "people":
-        user_id_extractor = lambda x: x.strip().split("_")[4]
+        user_id_extractor = lambda x: Sequence(x.strip()).person
     elif subject == "toys":
-        user_id_extractor = lambda x: x.strip().split("_")[3].split("-")[1]
+        user_id_extractor = lambda x: Sequence(x.strip()).toy
     no_first_line = True
 elif project == "segmentation":
     splits = ["train", "validation", "test"]
     file_format = "D:/data/annotations/coarse-annotations/coarse_splits/{split}_coarse_assembly.txt"
     if subject == "people":
-        user_id_extractor = lambda x: x.strip().split("_")[5]
+        user_id_extractor = lambda x: Sequence(x.strip(), True).person
     elif subject == "toys":
-        user_id_extractor = lambda x: x.strip().split("_")[4].split("-")[1]
+        user_id_extractor = lambda x: Sequence(x.strip(), True).toy
     no_first_line = False
 elif project == "fine-grained":
     splits = ["train", "validation", "test"]
     file_format = "D:/data/annotations/fine-grained-annotations/{split}.csv"
     if subject == "people":
-        user_id_extractor = lambda x: x.strip().split("_")[4]
+        user_id_extractor = lambda x: Sequence(x.strip()).person
     elif subject == "toys":
-        user_id_extractor = lambda x: x.strip().split("_")[3].split("-")[1]
+        user_id_extractor = lambda x: Sequence(x.strip()).toy
     no_first_line = True
 elif project == "debug":
     print("Debug data")

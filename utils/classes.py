@@ -407,3 +407,59 @@ class BoundingBox:
         """
         center = self.get_center()
         return compute_distance(center, point)
+
+
+class Sequence:
+    """
+    Represents an Assembly101 sequence (i.e. assembly-disassembly record)
+    """
+
+    def __init__(self, sequence: str, coarse_title=False) -> None:
+        """
+        Initializes a Sequence object.
+
+        Args:
+            sequence (str): string which represents the sequence. It can also be a split row.
+            coarse_title (bool, optional): represents if the string passed is a title of a coarse labels file
+        """
+        self.coarse_title = coarse_title
+        tmp_sequence = sequence.split("_")
+        if (not self.coarse_title and len(tmp_sequence) >= 9) or (
+            coarse_title and len(tmp_sequence) >= 10
+        ):
+            self.sequence_list = sequence.split("_")
+        else:
+            print("The provided string is not a Sequence")
+            raise
+
+    def __str__(self) -> str:
+        full_sequence = (
+            "_".join(self.sequence_list)
+            if not self.coarse_title
+            else "_".join(self.sequence_list[1:])
+        )
+        if "," in full_sequence:
+            full_sequence = full_sequence.split(",")[1]
+        if "/" in full_sequence:
+            full_sequence = full_sequence.split("/")[0]
+
+        return full_sequence
+
+    def __hash__(self):
+        return hash(str(self))
+
+    def __eq__(self, other: Sequence | str):
+        if isinstance(other, Sequence):
+            return str(self) == str(other)
+        elif isinstance(other, str):
+            return str(self) == other
+        else:
+            return False
+
+    @property
+    def person(self):
+        return self.sequence_list[4 if not self.coarse_title else 5]
+
+    @property
+    def toy(self):
+        return self.sequence_list[3 if not self.coarse_title else 4].split("-")[1]

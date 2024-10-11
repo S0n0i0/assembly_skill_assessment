@@ -4,6 +4,7 @@ import numpy as np
 from statistics import mean
 
 from utils.constants import first_lines
+from utils.classes import Sequence
 
 
 def map_skill_level(skill_aggregations, skill_level):
@@ -13,7 +14,9 @@ def map_skill_level(skill_aggregations, skill_level):
     return None
 
 
-def get_splits_distributions(splits_divisions: dict[str, str], data):
+def get_splits_distributions(
+    splits_divisions: dict[str, str], data: dict[str, dict[Sequence, dict[str, any]]]
+):
     global people_per_split
 
     skill_levels = {
@@ -97,7 +100,7 @@ def check_balance(splits_distributions):
 
 def get_nearest_person(
     splits_divisions: dict[str, str],
-    data,
+    data: dict[str, dict[Sequence, dict[str, any]]],
     to_fix: tuple[str, int],
     target: tuple[str, int],
 ):
@@ -123,7 +126,11 @@ def get_nearest_person(
 
 
 def move_person(
-    splits_order: dict[str, list[str]], splits_divisions, data, person: str, split: str
+    splits_order: dict[str, list[Sequence]],
+    splits_divisions,
+    data: dict[str, dict[Sequence, dict[str, any]]],
+    person: str,
+    split: str,
 ):
     sequences = list(data[person].keys())
     splits_order[splits_divisions[person]] = list(
@@ -143,7 +150,7 @@ def write_split_challenge(split: str):
         f.write(",".join(first_lines["splits"][split]) + "\n")
         id = 0
         for sequence in splits_order[split]:
-            person = sequence.split("_")[4]
+            person = sequence.person
             for i, row_values in enumerate(data[person][sequence]["values"]):
                 f.write(f"{i},{sequence},{','.join(row_values)}\n")
                 id += 1
@@ -178,19 +185,19 @@ balance_tollerances = {
 }
 
 # Create a dictionary of the levels for all people
-data = {}
+data: dict[str, dict[Sequence, dict[str, any]]] = {}
 for skill_level_file in os.listdir(annotations_directories["skills"]):
     with open(
         os.path.join(annotations_directories["skills"], skill_level_file), "r"
     ) as f:
         for line in f:
-            sequence = line.strip()
+            sequence = Sequence(line.strip())
             if (
                 sequence
                 == "nusar-2021_action_both_9011-b06b_9011_user_id_2021-02-01_154253"
             ):
                 pass
-            person = sequence.split("_")[4]
+            person = sequence.person
             skill_level = int(skill_level_file[:-4].split("_")[1])
             if person not in data:
                 data[person] = {}
@@ -210,9 +217,11 @@ for split in people_per_split:
     for line in lines[1:]:
         id = int(line.split(",")[0])
         if id != last_id:
-            divided_line = line.strip().split(",")
-            person = line.split("_")[4]
+            line = line.strip()
+            divided_line = line.split(",")
             sequence, view = divided_line[1].split("/")
+            sequence = Sequence(sequence)
+            person = sequence.person
             end_frame = int(divided_line[3])
             values = divided_line[2:]
             last_id = id
@@ -232,9 +241,9 @@ for split in people_per_split:
             if sequence != last_sequence[0]:
                 actual_splits_order[split].append(sequence)
                 if last_sequence != ["", -1]:
-                    data[last_sequence[0].split("_")[4]][last_sequence[0]][
-                        "end_frame"
-                    ] = last_sequence[1]
+                    data[last_sequence[0].person][last_sequence[0]]["end_frame"] = (
+                        last_sequence[1]
+                    )
                 last_sequence[0] = sequence
             last_sequence[1] = end_frame
         else:
@@ -243,9 +252,7 @@ for split in people_per_split:
             data[person][sequence]["views"].append(view)
 
     if last_sequence[0] != "":
-        data[last_sequence[0].split("_")[4]][last_sequence[0]]["end_frame"] = (
-            last_sequence[1]
-        )
+        data[last_sequence[0].person][last_sequence[0]]["end_frame"] = last_sequence[1]
 
 """
 data = {
@@ -292,7 +299,7 @@ people = list(data.keys())
 people.sort(key=lambda p: sum([data[p][s]["end_frame"] for s in data[p]]), reverse=True)
 
 # Place people in order to follow the people_per_split
-splits_order: dict[str, list[str]] = {split: [] for split in people_per_split}
+splits_order: dict[str, list[Sequence]] = {split: [] for split in people_per_split}
 splits_counters: dict[str, int] = {split: 0 for split in people_per_split}
 splits_divisions: dict[str, str] = {person: None for person in people}
 splits = cycle(people_per_split.keys())
@@ -309,7 +316,7 @@ for person in people:
 
 again = True
 save = True
-splits_order_archive: list[dict[str, list[str]]] = []
+splits_order_archive: list[dict[str, list[Sequence]]] = []
 while again:
     print("Distribution n.", len(splits_order_archive))
     splits_order_archive.append(splits_order)
@@ -386,15 +393,13 @@ while again:
 if save:
     # Update is_shared flag in values
     toys = {
-        split: set(
-            [sequence.split("_")[3].split("-")[1] for sequence in splits_order[split]]
-        )
+        split: set([sequence.toy for sequence in splits_order[split]])
         for split in splits_order
     }
     shared_toys = toys["train"] & toys["validation"] | toys["train"] & toys["test"]
     for person in data:
         for sequence in data[person]:
-            toy = sequence.split("_")[3].split("-")[1]
+            toy = sequence.toy
             for i in range(len(data[person][sequence]["values"])):
                 data[person][sequence]["values"][i][-2] = (
                     "1" if toy in shared_toys else "0"
@@ -406,7 +411,7 @@ if save:
             f.write(",".join(first_lines["splits"][split]) + "\n")
             id = 0
             for sequence in splits_order[split]:
-                person = sequence.split("_")[4]
+                person = sequence.person
                 for row_values in data[person][sequence]["values"]:
                     for view in data[person][sequence]["views"]:
                         f.write(f"{id},{sequence}/{view},{','.join(row_values)}\n")
