@@ -2,9 +2,21 @@ import os
 from itertools import cycle
 import numpy as np
 from statistics import mean
+from typing import TypeAlias
 
 from utils.constants import first_lines
 from utils.classes import Sequence
+
+
+SplitsOrder: TypeAlias = dict[str, list[Sequence]]
+SplitsOrderArchive: TypeAlias = list[
+    list[dict[str, list[Sequence]]] | None,
+    tuple[str, int] | None,
+    tuple[str, int] | None,
+]
+ActualSplitsDivisions: TypeAlias = dict[str, dict[str, list[str]]]
+SplitsDivisions: TypeAlias = dict[str, str]
+SplitsData: TypeAlias = dict[str, dict[Sequence, dict[str, any]]]
 
 
 def map_skill_level(skill_aggregations, skill_level):
@@ -15,7 +27,9 @@ def map_skill_level(skill_aggregations, skill_level):
 
 
 def get_splits_distributions(
-    splits_divisions: dict[str, str], data: dict[str, dict[Sequence, dict[str, any]]]
+    splits_divisions: SplitsDivisions,
+    data: SplitsData,
+    log=False,
 ):
     global people_per_split
 
@@ -42,17 +56,18 @@ def get_splits_distributions(
         for split in people_per_split
     }
 
-    print("_Videos per split/skill level:")
-    for split in people_per_split:
-        print(f"- {split}: {splits_distributions[split]['skills']}")
-    """print("_Duration:")
-    for split in people_per_split:
-        print(f"- {split}: {splits_distributions[split]['duration']}")"""
+    if log:
+        print("_Videos per split/skill level:")
+        for split in people_per_split:
+            print(f"- {split}: {splits_distributions[split]['skills']}")
+        """print("_Duration:")
+        for split in people_per_split:
+            print(f"- {split}: {splits_distributions[split]['duration']}")"""
 
     return splits_distributions
 
 
-def check_balance(splits_distributions):
+def check_balance(splits_distributions, log=False):
     global people_per_split
 
     total_videos = {}
@@ -62,34 +77,40 @@ def check_balance(splits_distributions):
         # durations.append(splits_distributions[split]["duration"])
         total_videos[split] = sum(splits_distributions[split]["skills"])
 
-    to_print = {split: [] for split in people_per_split}
+    splits_percentages = {split: [] for split in people_per_split}
     for i in range(len(skill_aggregations)):
-        skills_rel = []
+        percentage_skills_diff = []
         for split in people_per_split:
-            skills_rel.append(
+            percentage_skills_diff.append(
                 splits_distributions[split]["skills"][i] / total_videos[split]
             )
-            to_print[split].append(round(skills_rel[-1] * 100, 2))
-        skill_dristributions_diffs.append(max(skills_rel) - min(skills_rel))
+            splits_percentages[split].append(round(percentage_skills_diff[-1] * 100, 2))
+        skill_dristributions_diffs.append(
+            max(percentage_skills_diff) - min(percentage_skills_diff)
+        )
         """skill_dristributions_diffs.append(
             max(splits_distributions[split]["skills"])
             - min(splits_distributions[split]["skills"])
             < balance_tollerances["skills"]
         )"""
 
-    print("_Percentages:")
-    for split in to_print:
-        print(f"- {split}: {tuple(to_print[split])}")
+    if log:
+        print("_Percentages:")
+        for split in splits_percentages:
+            print(f"- {split}: {tuple(splits_percentages[split])}")
     return {
         "processed_info": {
-            "skills_rel": skill_dristributions_diffs,
+            "percentage_skills_diff": {
+                "percentages": splits_percentages,
+                "diffs": skill_dristributions_diffs,
+            },
             # "duration": durations,
         },
         "balance": {
             # "skills": all(skill_dristributions_diffs),
-            "skills_rel": all(
+            "percentage_skills_diff": all(
                 [
-                    diff < balance_tollerances["skills_rel"]
+                    diff < balance_tollerances["percentage_skills_diff"]
                     for diff in skill_dristributions_diffs
                 ]
             ),
@@ -98,37 +119,78 @@ def check_balance(splits_distributions):
     }
 
 
-def get_nearest_person(
-    splits_divisions: dict[str, str],
-    data: dict[str, dict[Sequence, dict[str, any]]],
+def get_nearest_people(
+    splits_divisions: SplitsDivisions,
+    data: SplitsData,
     to_fix: tuple[str, int],
     target: tuple[str, int],
+    splits_order_archive: SplitsOrderArchive | None = None,
 ):
     global people_per_split
 
-    to_fix_person = ("", -10)
-    target_person = ("", -10)
-    for person in splits_divisions:
-        if splits_divisions[person] == to_fix[0]:
-            tmp_mean = mean(
-                [data[person][sequence]["skill_level"] for sequence in data[person]]
-            )
-            if abs(tmp_mean - to_fix[1]) < abs(to_fix_person[1] - to_fix[1]):
-                to_fix_person = (person, tmp_mean)
-        elif splits_divisions[person] == target[0]:
-            tmp_mean = mean(
-                [data[person][sequence]["skill_level"] for sequence in data[person]]
-            )
-            if abs(tmp_mean - target[1]) < abs(target_person[1] - target[1]):
-                target_person = (person, tmp_mean)
+    get_skill_mean = lambda person: mean(
+        [data[person][sequence]["skill_level"] for sequence in data[person]]
+    )
 
-    return to_fix_person[0], target_person[0]
+    to_fix_candidates = [
+        (person, get_skill_mean(person))
+        for person in splits_divisions.keys()
+        if splits_divisions[person] == to_fix[0]
+    ]
+    to_fix_candidates.sort(key=lambda x: abs(x[1] - to_fix[1]))
+    target_candidates = [
+        (person, get_skill_mean(person))
+        for person in splits_divisions.keys()
+        if splits_divisions[person] == target[0]
+    ]
+    target_candidates.sort(key=lambda x: abs(x[1] - target[1]))
+
+    i = 0
+    j = 0
+    if splits_order_archive is not None:
+        again = True
+        while again and i < len(to_fix_candidates) and j < len(target_candidates):
+            if is_old_movement(
+                splits_order_archive, to_fix_candidates[i][1], target_candidates[j][1]
+            ):
+                impossible_diff = max(skill_aggregations.keys()) + 1
+                next_to_fix_diff = (
+                    abs(to_fix_candidates[i + 1][1] - to_fix[1])
+                    if i + 1 < len(to_fix_candidates)
+                    else impossible_diff
+                )
+                next_target_diff = (
+                    abs(target_candidates[j + 1][1] - target[1])
+                    if j + 1 < len(target_candidates)
+                    else impossible_diff
+                )
+                if next_to_fix_diff < next_target_diff:
+                    i += 1
+                elif next_to_fix_diff > next_target_diff:
+                    j += 1
+                elif (
+                    next_to_fix_diff == impossible_diff
+                    and next_target_diff == impossible_diff
+                ):
+                    i = -1
+                    j = -1
+                    again = False
+                else:
+                    i += 1  # Possibility to add further conditions
+            else:
+                again = False
+
+    return (
+        (to_fix_candidates[i][0], target_candidates[j][0])
+        if i > -1 and j > -1
+        else (None, None)
+    )
 
 
 def move_person(
-    splits_order: dict[str, list[Sequence]],
-    splits_divisions,
-    data: dict[str, dict[Sequence, dict[str, any]]],
+    splits_order: SplitsOrder,
+    splits_divisions: SplitsDivisions,
+    data: SplitsData,
     person: str,
     split: str,
 ):
@@ -156,6 +218,35 @@ def write_split_challenge(split: str):
                 id += 1
 
 
+def get_last_splits_order(splits_order_archive: SplitsOrderArchive):
+    for step in reversed(splits_order_archive):
+        if step[0] is not None:
+            return step[0]
+
+    return None
+
+
+def is_old_movement(
+    splits_order_archive: SplitsOrderArchive, to_fix_level: float, target_level: float
+):
+    k = len(splits_order_archive) - 1
+    found = False
+    while not found and k >= 0:
+        a = splits_order_archive[k][1][1]
+        b = splits_order_archive[k][2][1]
+        if to_fix_level != a and target_level != b:
+            k -= 1
+        else:
+            c = get_last_splits_order(splits_order_archive[:k])
+            d = get_last_splits_order(splits_order_archive)
+            if c == d:
+                found = True
+            else:
+                k -= 1
+
+    return found
+
+
 annotations_directories = {
     "fine": "D:/data/assembly/annotations/action_anticipation/cropped",  # Splits directory
     "skills": "D:/data/assembly/annotations/skill_labels/",  # Skills directory
@@ -180,12 +271,12 @@ skill_aggregations = {
 }
 balance_tollerances = {
     # "skills": 20,  # Number of elements that a skill level in a split can differ from the others
-    "skills_rel": 0.1,  #
+    "percentage_skills_diff": 0.09,  # Difference between the percentage of a skill level in a split and the others
     # "duration": 20,  # Seconds
 }
 
 # Create a dictionary of the levels for all people
-data: dict[str, dict[Sequence, dict[str, any]]] = {}
+data: SplitsData = {}
 for skill_level_file in os.listdir(annotations_directories["skills"]):
     with open(
         os.path.join(annotations_directories["skills"], skill_level_file), "r"
@@ -205,8 +296,8 @@ for skill_level_file in os.listdir(annotations_directories["skills"]):
                 "skill_level": map_skill_level(skill_aggregations, skill_level),
             }
 
-actual_splits_order: dict[str, list[str]] = {}
-actual_splits_divisions: dict[str, dict[str, list[str]]] = {}
+actual_splits_order: SplitsOrder = {}
+actual_splits_divisions: ActualSplitsDivisions = {}
 for split in people_per_split:
     actual_splits_order[split] = []
     actual_splits_divisions = {}
@@ -254,54 +345,14 @@ for split in people_per_split:
     if last_sequence[0] != "":
         data[last_sequence[0].person][last_sequence[0]]["end_frame"] = last_sequence[1]
 
-"""
-data = {
-    p1: { s1: { skill_level: 2, end_frame: 10, values: [[1,2,4],[5,6,3],[6,10,5]], },
-        s2: { skill_level: 3, end_frame: 6, values: [[1,4,4],[5,6,4]], },
-    },
-    p2: { s3: { skill_level: 4, end_frame: 21, values: [[1,7,8],[5,6,3],[11,21,9]], },
-        s4: { skill_level: 4, end_frame: 15, values: [[4,6,3],[5,7,4],[6,15,5]], },
-        s5: { skill_level: 5, end_frame: 8, values: [[1,6,8],[6,7,1],[7,8,2]], }, },
-    p3: { s6: { skill_level: 4, end_frame: 5, values: [[0,2,3],[2,4,4],[3,5,2]], }, }
-}
-actual_splits_order = {
-    train: [s1, s2, s3],
-    validation: [s4, s5,],
-    test: [s6,],
-}
-actual_splits_divisions = {
-    p1: { train: [s1, s2], validation: [], test: [], },
-    p2: { train: [s3], validation: [s4, s5], test: [], },
-    p3: { train: [], validation: [], test: [s6], },
-}
-splits_order = {
-    train: [s3, s4, s5,],
-    validation: [s1, s2,],
-    test: [s6,],
-}
-splits_divisions = {
-    p1: "validation",
-    p2: "train",
-    p3: "test",
-}
-
-# steps:
-1) Sort in descending order of people by total duration of their videos
-2) Place people in order to follow the people_per_split
-Loop until is balanced:
-    3) Compute the distribution of every skill level in the splits
-    4) Check if the distribution is balanced
-    5) If not, move the person with the highest skill level to the split with the lowest skill level, exchanging with a person with the skill level with many people
-"""
-
 # Sort in descending order of people by total duration of their videos
 people = list(data.keys())
 people.sort(key=lambda p: sum([data[p][s]["end_frame"] for s in data[p]]), reverse=True)
 
 # Place people in order to follow the people_per_split
-splits_order: dict[str, list[Sequence]] = {split: [] for split in people_per_split}
+splits_order: SplitsOrder = {split: [] for split in people_per_split}
 splits_counters: dict[str, int] = {split: 0 for split in people_per_split}
-splits_divisions: dict[str, str] = {person: None for person in people}
+splits_divisions: SplitsDivisions = {person: None for person in people}
 splits = cycle(people_per_split.keys())
 for person in people:
     count = 0
@@ -316,76 +367,95 @@ for person in people:
 
 again = True
 save = True
-splits_order_archive: list[dict[str, list[Sequence]]] = []
+repeat = False
+splits_order_archive: SplitsOrderArchive = []
 while again:
     print("Distribution n.", len(splits_order_archive))
-    splits_order_archive.append(splits_order)
+    splits_order_archive.append([splits_order if not repeat else None, None, None])
 
-    splits_distribution = get_splits_distributions(splits_divisions, data)
-    balance_analysis = check_balance(splits_distribution)
+    splits_distribution = get_splits_distributions(splits_divisions, data, True)
+    balance_analysis = check_balance(splits_distribution, True)
     print()
-    if all(balance_analysis["balance"].values()):
-        print("Splits are balanced.")
-        again = False
-        continue
+    if not repeat:
+        if all(balance_analysis["balance"].values()):
+            print("Splits are balanced.")
+            again = False
+            continue
 
-    print("Splits are not balanced. Do you want to:")
-    print("- Confirm this distribution anyway (1)")
-    print("- Exit without saving (2)")
-    print("- Come back to a previous one (3)")
-    print("- Try another distribution (other)")
-    answer = input()
+        print("Splits are not balanced. Do you want to:")
+        print("- Confirm this distribution anyway (1)")
+        print("- Exit without saving (2)")
+        print("- Come back to a previous one (3)")
+        print("- Try another distribution (other)")
+        answer = input()
 
-    if answer == "1":
-        print("Distribution confirmed")
-        again = False
-        continue
-    elif answer == "2":
-        print("Execution terminated")
-        again = False
-        save = False
-        continue
-    elif answer == "3":
-        right = False
-        while not right:
-            print("Insert the number of the distribution you want to come back:")
-            answer = input()
-            if answer.isnumeric():
-                answer = int(answer)
-                if answer < len(splits_order_archive):
-                    splits_order = splits_order_archive[answer]
-                    splits_order_archive = splits_order_archive[:answer]
-                    right = True
+        if answer == "1":
+            print("Distribution confirmed")
+            again = False
+            continue
+        elif answer == "2":
+            print("Execution terminated")
+            again = False
+            save = False
+            continue
+        elif answer == "3":
+            right = False
+            while not right:
+                print("Insert the number of the distribution you want to come back:")
+                answer = input()
+                if answer.isnumeric():
+                    answer = int(answer)
+                    if answer < len(splits_order_archive):
+                        splits_order = get_last_splits_order(splits_order_archive)
+                        splits_order_archive = splits_order_archive[:answer]
+                        repeat = True
+                        right = True
+                    else:
+                        print("Invalid number.")
                 else:
-                    print("Invalid number.")
-            else:
-                print("Invalid input.")
-        continue
+                    print("Invalid input.")
+            continue
 
-    skill_level_to_fix = np.argmax(
-        balance_analysis["processed_info"]["skills_rel"]
-    )  # 0 based
-    skill_level_target = np.argmin(
-        balance_analysis["processed_info"]["skills_rel"]
-    )  # 0 based
+    skill_level_to_fix = (
+        np.argmax(balance_analysis["processed_info"]["percentage_skills_diff"]["diffs"])
+        + 1
+    )
+    skill_level_target = (
+        np.argmin(balance_analysis["processed_info"]["percentage_skills_diff"]["diffs"])
+        + 1
+    )
 
     skills_split = {
-        split: splits_distribution[split]["skills"][skill_level_to_fix]
+        split: balance_analysis["processed_info"]["percentage_skills_diff"][
+            "percentages"
+        ][split][skill_level_to_fix - 1]
         for split in splits_distribution
     }
     split_to_fix = max(skills_split, key=skills_split.get)
     skills_split = {
-        split: splits_distribution[split]["skills"][skill_level_target]
+        split: balance_analysis["processed_info"]["percentage_skills_diff"][
+            "percentages"
+        ][split][skill_level_target - 1]
         for split in splits_distribution
+        if split != split_to_fix
     }
     split_target = min(skills_split, key=skills_split.get)
+    splits_order_archive[-1][1] = (split_to_fix, skill_level_to_fix)
+    splits_order_archive[-1][2] = (split_target, skill_level_target)
 
-    to_fix_person, target_person = get_nearest_person(
+    to_fix_person, target_person = get_nearest_people(
         splits_divisions,
         data,
         (split_to_fix, skill_level_to_fix),
         (split_target, skill_level_target),
+        splits_order_archive if repeat else None,
     )
+    repeat = False
+
+    if to_fix_person is None and target_person is None:
+        print("No more people to move.")
+        again = False
+        continue
 
     move_person(splits_order, splits_divisions, data, to_fix_person, split_target)
     move_person(splits_order, splits_divisions, data, target_person, split_to_fix)
