@@ -423,7 +423,7 @@ class Sequence:
             coarse_title (bool, optional): represents if the string passed is a title of a coarse labels file
         """
         self.coarse_title = coarse_title
-        tmp_sequence = sequence.split("_")
+        tmp_sequence = sequence.strip().split("_")
         if (not self.coarse_title and len(tmp_sequence) >= 9) or (
             coarse_title and len(tmp_sequence) >= 10
         ):
@@ -455,6 +455,14 @@ class Sequence:
             return str(self) == other
         else:
             return False
+
+    def __add__(self, other: Sequence | str):
+        if isinstance(other, Sequence):
+            return Sequence(str(self) + str(other))
+        elif isinstance(other, str):
+            return Sequence(str(self) + other)
+        else:
+            return None
 
     @property
     def person(self):
