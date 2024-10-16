@@ -1,9 +1,8 @@
 from __future__ import annotations
 import cv2
 from datetime import datetime
-from enum import Enum
 
-from utils.enums import LogCode, SourceMode, SensorMode, DisplayLevel
+from utils.enums import LogCode, SourceMode, SensorMode, DisplayLevel, PathType
 from utils.functions import compute_distance
 
 
@@ -116,7 +115,7 @@ class Source:
         return source1 and source2 and source1.mode == source2.mode
 
 
-class FileSource(Source):
+class PathSource(Source):
     """Class responsible for storing data source information.
 
     Attributes:
@@ -125,7 +124,12 @@ class FileSource(Source):
     """
 
     def __init__(
-        self, mode: SourceMode, path: str | None = None, new_dump=True, params=None
+        self,
+        mode: SourceMode,
+        path: str | None = None,
+        new_dump=True,
+        params=None,
+        type: PathType = PathType.FILE,
     ):
         """Initialize the Source object.
 
@@ -136,6 +140,7 @@ class FileSource(Source):
 
         super().__init__(mode, params, new_dump)
         self.path = path
+        self.type = type
 
     @staticmethod
     def compare(source1, source2):
@@ -149,6 +154,12 @@ class FileSource(Source):
             bool: True if sources are equal, False otherwise
         """
         return Source.compare(source1, source2) and source1.path == source2.path
+
+
+class DataSource(Source):
+    def __init__(self, mode: SourceMode, data=None, params=None, new_dump=True):
+        super().__init__(mode, params, new_dump)
+        self.data = data
 
 
 class ChannelHandler:

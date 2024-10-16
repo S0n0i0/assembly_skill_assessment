@@ -172,7 +172,7 @@ class TSNDataSet(data.Dataset):
         else:
             segment_indices = self._get_test_indices(record)
 
-        return self.get(record, segment_indices)
+        return record, segment_indices, self.get(record, segment_indices)
 
     def _remove_oldest_video(self):
         oldest_path = next(iter(self.cache))
@@ -231,7 +231,7 @@ class TSNDataSet(data.Dataset):
                 if p < record.num_frames:
                     p += 1
 
-        return self.transform(images)
+        return images, self.transform(images)
 
     def get(self, record, indices):
         if self.use_video:
@@ -252,11 +252,15 @@ class TSNDataSet(data.Dataset):
                             "video": cap,
                             "last_access": current_time,
                         }
-                process_data = self.get_processed_frames(cap, record, indices)
+                original_data, process_data = self.get_processed_frames(
+                    cap, record, indices
+                )
         else:
-            process_data = self.get_processed_frames(cap, record, indices)
+            original_data, process_data = self.get_processed_frames(
+                cap, record, indices
+            )
 
-        return process_data, record.label
+        return original_data, process_data, record.label
 
     def __len__(self):
         return len(self.video_list)

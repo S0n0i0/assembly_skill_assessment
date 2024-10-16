@@ -5,7 +5,7 @@ import json
 from mmpose.apis import MMPoseInferencer
 import numpy as np
 
-from utils.classes import Source, FileSource, ChannelHandler
+from utils.classes import Source, PathSource, DataSource, ChannelHandler
 from utils.constants import log_manager
 from utils.enums import DisplayLevel, LogCode, SensorMode, SourceMode
 from utils.functions import load_dump, np_default
@@ -21,75 +21,10 @@ class PoseOpCode(Enum):
 
 
 class PoseEstimator:
-    def __init__(self, pose_source: Source = None, show=False):
+    def __init__(self, pose_source: Source, show=False):
 
-        default = True
-        if isinstance(pose_source, FileSource):
-            if pose_source.mode == SourceMode.DUMP:
-                try:
-                    self.pose_estimation = ChannelHandler(
-                        SensorMode.OFFLINE_DUMP,
-                        load_dump(pose_source.path),
-                        pose_source.path,
-                        pose_source.new_dump,
-                    )
-                    first_frame = list(self.pose_estimation.data.keys())[0]
-                    self.camera_name = list(
-                        self.pose_estimation.data[first_frame].keys()
-                    )[0]
-                    self.pose_inferencer = None
-                    log_manager.log(
-                        self.__class__.__name__,
-                        LogCode.SUCCESS,
-                        PoseOpCode.POSE_LOAD.value,
-                        "Dumped pose estimation loaded successfully",
-                        DisplayLevel.LOW,
-                    )
-                    return
-                except:
-                    log_manager.log(
-                        self.__class__.__name__,
-                        LogCode.ERROR,
-                        PoseOpCode.POSE_LOAD.value,
-                        "Pose estimation dump not loaded",
-                        DisplayLevel.LOW,
-                    )
-            elif pose_source.mode == SourceMode.VIDEO_REF:
-                try:
-                    self.pose_inferencer = MMPoseInferencer("wholebody")
-                    self.pose_estimation = ChannelHandler(
-                        SensorMode.OFFLINE,
-                        {},
-                        pose_source.path,
-                        pose_source.new_dump,
-                    )
-                    path_splitted = pose_source.path.split("/")
-                    self.camera_name = (
-                        path_splitted[-1].split("_")[-2]
-                        + ":"
-                        + path_splitted[-1].split("_")[-1].split(".")[0]
-                    )
-                    log_manager.log(
-                        self.__class__.__name__,
-                        LogCode.SUCCESS,
-                        PoseOpCode.POSE_LOAD.value,
-                        "Pose estimation video loaded successfully",
-                        DisplayLevel.LOW,
-                    )
-                    default = False
-                except:
-                    log_manager.log(
-                        self.__class__.__name__,
-                        LogCode.ERROR,
-                        PoseOpCode.POSE_LOAD.value,
-                        "Pose estimation video not loaded",
-                        DisplayLevel.LOW,
-                    )
-
+        default = self.set_pose(pose_source)
         if default:
-            self.pose_estimation = ChannelHandler()
-            self.pose_inferencer = None
-            self.camera_name = None
             self.show = False
             self.wait = None
         else:
@@ -98,6 +33,90 @@ class PoseEstimator:
 
         if self.is_initialized():
             atexit.register(self.dump_data)
+
+    def set_pose(self, pose_source: Source):
+        default = True
+
+        if pose_source.mode == SourceMode.DUMP:
+            try:
+                if isinstance(pose_source, PathSource):
+                    self.pose_estimation = ChannelHandler(
+                        SensorMode.OFFLINE_DUMP,
+                        load_dump(pose_source.path),
+                        pose_source.path,
+                        pose_source.new_dump,
+                    )
+                elif isinstance(pose_source, DataSource):
+                    self.pose_estimation = ChannelHandler(
+                        SensorMode.OFFLINE_DUMP,
+                        pose_source.data,
+                        pose_source.path,
+                        pose_source.new_dump,
+                    )
+                else:
+                    raise ValueError("Invalid pose source")
+
+                first_frame = list(self.pose_estimation.data.keys())[0]
+                self.camera_name = list(self.pose_estimation.data[first_frame].keys())[
+                    0
+                ]
+                self.pose_inferencer = None
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.SUCCESS,
+                    PoseOpCode.POSE_LOAD.value,
+                    "Dumped pose estimation loaded successfully",
+                    DisplayLevel.LOW,
+                )
+                return
+            except:
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.ERROR,
+                    PoseOpCode.POSE_LOAD.value,
+                    "Pose estimation dump not loaded",
+                    DisplayLevel.LOW,
+                )
+        elif pose_source.mode == SourceMode.VIDEO_REF:
+            try:
+                if not isinstance(pose_source, PathSource):
+                    raise ValueError("Invalid pose source")
+                self.pose_estimation = ChannelHandler(
+                    SensorMode.OFFLINE,
+                    {},
+                    pose_source.path,
+                    pose_source.new_dump,
+                )
+                self.pose_inferencer = MMPoseInferencer("wholebody")
+                path_splitted = pose_source.path.split("/")
+                self.camera_name = (
+                    path_splitted[-1].split("_")[-2]
+                    + ":"
+                    + path_splitted[-1].split("_")[-1].split(".")[0]
+                )
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.SUCCESS,
+                    PoseOpCode.POSE_LOAD.value,
+                    "Pose estimation video loaded successfully",
+                    DisplayLevel.LOW,
+                )
+                default = False
+            except:
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.ERROR,
+                    PoseOpCode.POSE_LOAD.value,
+                    "Pose estimation video not loaded",
+                    DisplayLevel.LOW,
+                )
+
+        if default:
+            self.pose_estimation = ChannelHandler()
+            self.pose_inferencer = None
+            self.camera_name = None
+
+        return default
 
     def is_initialized(self):
         return (
@@ -198,7 +217,7 @@ class PoseEstimator:
 
 
 if __name__ == "__main__":
-    pose_source = FileSource(
+    pose_source = PathSource(
         SourceMode.VIDEO_REF,
         "data/video_examples/nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/C10118_rgb.mp4",
         "data/dump/pose_dump.json",

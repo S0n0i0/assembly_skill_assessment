@@ -16,11 +16,15 @@ def write_file(file_path, ref_lines, original_lines=None, file_element_fn=None):
 
 
 def main():
-    file1_path = "D:/data/annotations/action_recognition/category.txt"
+    file1_path = "D:/data/annotations/fine-grained-annotations/old/head_actions.txt"
     file1_element_fn = lambda line: line.strip()
-    file2_path = "D:/data/annotations/action_anticipation/actions.csv"
+    file2_path = "D:/data/annotations/fine-grained-annotations/actions.csv"
     file2_element_fn = lambda line: line.split(",")[4]
-    common_file_path = None  # "D:/data/annotations/action_recognition/new_category.txt"
+    common_file_path = "D:/data/annotations/fine-grained-annotations/head_actions.txt"
+    differences_file_path = None
+    """(
+        "D:/data/annotations/fine-grained-annotations/differences.csv"
+    )"""
 
     original_file1, lines_file1 = read_file(file1_path, file1_element_fn)
     _, lines_file2 = read_file(file2_path, file2_element_fn)
@@ -34,8 +38,8 @@ def main():
 
     differences = lines_file1.symmetric_difference(lines_file2)
     print("Differences between the files:", len(differences))
-    # for line in differences:
-    # print(line.strip())
+    if differences_file_path is not None:
+        write_file(differences_file_path, differences, original_file1, file1_element_fn)
 
 
 if __name__ == "__main__":

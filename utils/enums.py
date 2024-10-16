@@ -30,3 +30,8 @@ class SourceMode(Enum):
     VIDEO = "VIDEO"
     VIDEO_REF = "VIDEO_REF"
     MODEL = "MODEL"
+
+
+class PathType(Enum):
+    FILE = "FILE"
+    DIR = "DIRECTORY"

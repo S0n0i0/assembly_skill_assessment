@@ -2,7 +2,7 @@ import cv2
 from enum import Enum
 import mediapipe as mp
 from mediapipe.framework.formats import landmark_pb2
-from utils.classes import Source, FileSource
+from utils.classes import Source, PathSource
 from utils.constants import log_manager
 from utils.enums import LogCode, SensorMode, SourceMode, DisplayLevel
 from utils.functions import load_dump
@@ -59,7 +59,7 @@ class MediapipeSource:
     def __init__(
         self,
         source: Source | None = None,
-        model: FileSource | None = None,
+        model: PathSource | None = None,
     ):
         """Initialize the Source object."""
         self.source = source
@@ -77,7 +77,7 @@ class MediapipeExtractor:
     ):
         BaseOptions = mp.tasks.BaseOptions
         default = True
-        if object_source and isinstance(object_source.source, FileSource):
+        if object_source and isinstance(object_source.source, PathSource):
             self.object_source = object_source.source
             if object_source.source.mode == SourceMode.DUMP:
                 try:
@@ -132,7 +132,7 @@ class MediapipeExtractor:
             self.object_detector_options = None
 
         default = True
-        if pose_source and isinstance(pose_source.source, FileSource):
+        if pose_source and isinstance(pose_source.source, PathSource):
             self.pose_source = pose_source.source
             if pose_source.source.mode == SensorMode.OFFLINE_DUMP:
                 try:
@@ -185,7 +185,7 @@ class MediapipeExtractor:
             self.pose_landmarker_options = None
 
         default = True
-        if hand_source and isinstance(hand_source.source, FileSource):
+        if hand_source and isinstance(hand_source.source, PathSource):
             self.hand_source = hand_source.source
             if hand_source.source.mode == SensorMode.OFFLINE_DUMP:
                 try:
@@ -241,7 +241,7 @@ class MediapipeExtractor:
             self.hand_landmarker_result = None
             self.hand_landmarker_options = None
 
-        if FileSource.compare(self.object_source, self.pose_source):
+        if PathSource.compare(self.object_source, self.pose_source):
             self.same_source = True
         else:
             self.same_source = False
@@ -268,27 +268,27 @@ if __name__ == "__main__":
     compute_pose = True
     compute_hand = False
 
-    video_source = FileSource(
+    video_source = PathSource(
         SourceMode.VIDEO,
         "./data/video_examples/C10118_rgb.mp4",
     )
     object_source = MediapipeSource(
         video_source,
-        FileSource(
+        PathSource(
             SourceMode.DUMP,
             "./models/mediapipe/efficientdet_lite2.tflite",
         ),
     )
     pose_source = MediapipeSource(
         video_source,
-        FileSource(
+        PathSource(
             SourceMode.DUMP,
             "./models/mediapipe/pose_landmarker_full.task",
         ),
     )
     hand_source = MediapipeSource(
         video_source,
-        FileSource(
+        PathSource(
             SourceMode.DUMP,
             "./models/mediapipe/hand_landmarker.task",
         ),

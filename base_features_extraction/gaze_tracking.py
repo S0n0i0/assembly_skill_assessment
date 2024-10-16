@@ -4,7 +4,14 @@ from enum import Enum
 import json
 import numpy as np
 
-from utils.classes import BoundingBox, ChannelHandler, FileSource, Source, VideoReader
+from utils.classes import (
+    BoundingBox,
+    ChannelHandler,
+    Source,
+    PathSource,
+    DataSource,
+    VideoReader,
+)
 from utils.constants import log_manager
 from utils.enums import DisplayLevel, LogCode, SensorMode, SourceMode
 from utils.functions import get_derived_SM, load_dump, compute_distance
@@ -192,8 +199,8 @@ class GlobalGazeTracking:
     def compute_world_data(
         self,
         norm=False,
-        cameras_dump: FileSource | None = None,
-        gaze_dump: FileSource | None = None,
+        cameras_dump: PathSource | None = None,
+        gaze_dump: PathSource | None = None,
         force=0,
     ):
         """Calculate the world coordinates of the cameras and derive the average point for gaze.
@@ -315,50 +322,72 @@ class GazeObjectTracking:
         object_source: Source | None = None,
         gaze_target: Source | None = None,
     ):
+        self.set_gaze(gaze_source, object_source, gaze_target)
+
+        self.last_coordinates: dict[float, tuple[float, float]] = {}
+
+        if self.is_initialized():
+            atexit.register(self.dump_data)
+
+    def set_gaze(
+        self,
+        gaze_source: Source | None = None,
+        object_source: Source | None = None,
+        gaze_target: Source | None = None,
+    ):
         default = True
-        if isinstance(gaze_target, FileSource):
-            if gaze_target.mode == SourceMode.DUMP:
-                try:
+        if gaze_target.mode == SourceMode.DUMP:
+            try:
+                if isinstance(gaze_target, PathSource):
                     self.gaze_target = ChannelHandler(
                         SensorMode.OFFLINE_DUMP,
                         load_dump(gaze_target.path),
                         gaze_target.path,
                         gaze_source.new_dump,
                     )
-                    self.gaze = ChannelHandler()
-                    self.objects = ChannelHandler()
-                    self.last_coordinates = None
-                    log_manager.log(
-                        self.__class__.__name__,
-                        LogCode.SUCCESS,
-                        GazeOpCode.GAZE_TARGET_LOAD.value,
-                        "Dumped gaze target loaded successfully",
-                        DisplayLevel.LOW,
+                elif isinstance(gaze_target, DataSource):
+                    self.gaze_target = ChannelHandler(
+                        SensorMode.OFFLINE_DUMP,
+                        gaze_target.data,
+                        gaze_target.params.path,
+                        gaze_source.new_dump,
                     )
-                    return
-                except:
-                    log_manager.log(
-                        self.__class__.__name__,
-                        LogCode.ERROR,
-                        GazeOpCode.GAZE_TARGET_LOAD.value,
-                        "Gaze target not loaded",
-                        DisplayLevel.LOW,
-                    )
-            elif gaze_target.mode == SourceMode.DUMP_REF:
-                self.gaze_target = ChannelHandler(
-                    None,
-                    {},
-                    gaze_target.path,
-                    gaze_target.new_dump,
-                )
+                else:
+                    raise Exception("Invalid gaze target source")
+                self.gaze = ChannelHandler()
+                self.objects = ChannelHandler()
+                self.last_coordinates = None
                 log_manager.log(
                     self.__class__.__name__,
                     LogCode.SUCCESS,
                     GazeOpCode.GAZE_TARGET_LOAD.value,
-                    "Gaze target initialized successfully",
+                    "Dumped gaze target loaded successfully",
                     DisplayLevel.LOW,
                 )
-                default = False
+                return
+            except:
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.ERROR,
+                    GazeOpCode.GAZE_TARGET_LOAD.value,
+                    "Gaze target not loaded",
+                    DisplayLevel.LOW,
+                )
+        elif gaze_target.mode == SourceMode.DUMP_REF:
+            self.gaze_target = ChannelHandler(
+                None,
+                {},
+                gaze_target.path,
+                gaze_target.new_dump,
+            )
+            log_manager.log(
+                self.__class__.__name__,
+                LogCode.SUCCESS,
+                GazeOpCode.GAZE_TARGET_LOAD.value,
+                "Gaze target initialized successfully",
+                DisplayLevel.LOW,
+            )
+            default = False
 
         if default:
             self.gaze_target = ChannelHandler()
@@ -366,136 +395,124 @@ class GazeObjectTracking:
         default = True
         if gaze_source and object_source:
             tmp_frame = None
-            if isinstance(gaze_source, FileSource):
-                if gaze_source.mode == SourceMode.VIDEO_REF:
-                    try:
-                        tmp_video = VideoReader(gaze_source.path)
-                        ret, tmp_frame = tmp_video.read()
-                        if not ret:
+            if gaze_source.mode == SourceMode.VIDEO_REF:
+                try:
+                    if isinstance(gaze_source, PathSource):
+                        self.camera_name, self.gaze = (
+                            GazeObjectTracking.get_gaze_source_data(gaze_source)
+                        )
+                        if self.camera_name is None or self.gaze is None:
                             raise Exception("Video not loaded")
-                        path_splitted = gaze_source.path.split("/")
-                        self.camera_name = (
-                            path_splitted[-1].split("_")[-2]
-                            + ":"
-                            + path_splitted[-1].split("_")[-1].split(".")[0]
-                        )
-                        self.gaze = ChannelHandler(
-                            SensorMode.OFFLINE,
-                            {
-                                "sequence_name": path_splitted[-2],
-                                "camera_name": self.camera_name,
-                                "width": tmp_frame.shape[1],
-                                "height": tmp_frame.shape[0],
-                                "gaze_coordinates": (
-                                    tmp_frame.shape[1] // 2,
-                                    tmp_frame.shape[0] // 2,
-                                ),
-                                "proximity_threshold": gaze_source.params[
-                                    "proximity_threshold"
-                                ],
-                                "approaching_threshold": gaze_source.params[
-                                    "approaching_threshold"
-                                ],
-                                "coordinates_memory_size": gaze_source.params[
-                                    "coordinates_memory_size"
-                                ],
-                                "correct_directions": gaze_source.params[
-                                    "correct_directions"
-                                ],
-                            },
-                            gaze_source.path,
-                            gaze_source.new_dump,
-                        )
-                        log_manager.log(
-                            self.__class__.__name__,
-                            LogCode.SUCCESS,
-                            GazeOpCode.GAZE_LOAD.value,
-                            "Gaze video ref loaded successfully",
-                            DisplayLevel.LOW,
-                        )
-                        default = False
-                    except:
-                        log_manager.log(
-                            self.__class__.__name__,
-                            LogCode.ERROR,
-                            GazeOpCode.GAZE_LOAD.value,
-                            "Gaze video ref not loaded",
-                            DisplayLevel.LOW,
-                        )
-                elif gaze_source.mode == SourceMode.DUMP:
-                    try:
+                    elif isinstance(gaze_source, DataSource):
+                        self.camera_name, self.gaze = gaze_source.data
+                    else:
+                        raise Exception("Invalid gaze source")
+                    log_manager.log(
+                        self.__class__.__name__,
+                        LogCode.SUCCESS,
+                        GazeOpCode.GAZE_LOAD.value,
+                        "Gaze video ref loaded successfully",
+                        DisplayLevel.LOW,
+                    )
+                    default = False
+                except:
+                    log_manager.log(
+                        self.__class__.__name__,
+                        LogCode.ERROR,
+                        GazeOpCode.GAZE_LOAD.value,
+                        "Gaze video ref not loaded",
+                        DisplayLevel.LOW,
+                    )
+            elif gaze_source.mode == SourceMode.DUMP:
+                try:
+                    if isinstance(gaze_source, PathSource):
                         self.gaze = ChannelHandler(
                             SensorMode.OFFLINE_DUMP,
                             load_dump(gaze_source.path),
                             gaze_source.path,
                             gaze_source.new_dump,
                         )
-                        log_manager.log(
-                            self.__class__.__name__,
-                            LogCode.SUCCESS,
-                            GazeOpCode.GAZE_LOAD.value,
-                            "Gaze dump loaded successfully",
-                            DisplayLevel.LOW,
+                    elif isinstance(gaze_source, DataSource):
+                        self.gaze = ChannelHandler(
+                            SensorMode.OFFLINE_DUMP,
+                            gaze_source.data,
+                            gaze_source.params.path,
+                            gaze_source.new_dump,
                         )
-                        default = False
-                    except:
-                        log_manager.log(
-                            self.__class__.__name__,
-                            LogCode.ERROR,
-                            GazeOpCode.GAZE_LOAD.value,
-                            "Gaze dump not loaded",
-                            DisplayLevel.LOW,
-                        )
+                    else:
+                        raise Exception("Invalid gaze source")
+                    log_manager.log(
+                        self.__class__.__name__,
+                        LogCode.SUCCESS,
+                        GazeOpCode.GAZE_LOAD.value,
+                        "Gaze dump loaded successfully",
+                        DisplayLevel.LOW,
+                    )
+                    default = False
+                except:
+                    log_manager.log(
+                        self.__class__.__name__,
+                        LogCode.ERROR,
+                        GazeOpCode.GAZE_LOAD.value,
+                        "Gaze dump not loaded",
+                        DisplayLevel.LOW,
+                    )
 
             if not default:
-                if isinstance(object_source, FileSource):
-                    if (
-                        object_source.mode == SourceMode.DUMP
-                        or object_source.mode == SourceMode.SUPPORT_DUMP
-                    ):
-                        try:
+
+                if (
+                    object_source.mode == SourceMode.DUMP
+                    or object_source.mode == SourceMode.SUPPORT_DUMP
+                ):
+                    try:
+                        mode = (
+                            SensorMode.OFFLINE_DUMP
+                            if object_source.mode == SourceMode.DUMP
+                            else SensorMode.OFFLINE
+                        )
+                        if isinstance(object_source, PathSource):
                             self.objects = ChannelHandler(
-                                (
-                                    SensorMode.OFFLINE_DUMP
-                                    if object_source.mode == SourceMode.DUMP
-                                    else SensorMode.OFFLINE
-                                ),
+                                mode,
                                 load_dump(object_source.path)[
                                     self.gaze.data["sequence_name"]
                                 ],
                                 object_source.path,
                                 object_source.new_dump,
                             )
-                            if (
-                                tmp_frame is None
-                                and gaze_source.mode != SourceMode.DUMP
-                            ):
-                                raise Exception("Gaze data not loaded")
-                            first_frame = list(self.objects.data.keys())[0]
-                            tmp_camera = list(self.objects.data[first_frame].keys())[0]
-                            if self.camera_name == tmp_camera:
-                                self.tracker = cv2.legacy.TrackerMIL_create()
-                                self.tracker.init(
-                                    tmp_frame,
-                                    self.objects.data[first_frame][self.camera_name],
-                                )
-                                log_manager.log(
-                                    self.__class__.__name__,
-                                    LogCode.SUCCESS,
-                                    GazeOpCode.OBJECTS_LOAD.value,
-                                    "Dumped objects data loaded successfully",
-                                    DisplayLevel.LOW,
-                                )
-                                default = False
-                        except:
+                        elif isinstance(object_source, DataSource):
+                            self.objects = ChannelHandler(
+                                mode,
+                                object_source.data[self.gaze.data["sequence_name"]],
+                                object_source.params.path,
+                                object_source.new_dump,
+                            )
+                        if tmp_frame is None and gaze_source.mode != SourceMode.DUMP:
+                            raise Exception("Gaze data not loaded")
+                        first_frame = list(self.objects.data.keys())[0]
+                        tmp_camera = list(self.objects.data[first_frame].keys())[0]
+                        if self.camera_name == tmp_camera:
+                            self.tracker = cv2.legacy.TrackerMIL_create()
+                            self.tracker.init(
+                                tmp_frame,
+                                self.objects.data[first_frame][self.camera_name],
+                            )
                             log_manager.log(
                                 self.__class__.__name__,
-                                LogCode.ERROR,
+                                LogCode.SUCCESS,
                                 GazeOpCode.OBJECTS_LOAD.value,
-                                "Objects data dump not loaded",
+                                "Dumped objects data loaded successfully",
                                 DisplayLevel.LOW,
                             )
-                            default = True
+                            default = False
+                    except:
+                        log_manager.log(
+                            self.__class__.__name__,
+                            LogCode.ERROR,
+                            GazeOpCode.OBJECTS_LOAD.value,
+                            "Objects data dump not loaded",
+                            DisplayLevel.LOW,
+                        )
+                        default = True
 
         if default:
             self.gaze = ChannelHandler()
@@ -507,10 +524,40 @@ class GazeObjectTracking:
         self.gaze_target.mode = (
             tmp_mode if tmp_mode is not SensorMode.OFFLINE_DUMP else SensorMode.OFFLINE
         )
-        self.last_coordinates: dict[float, tuple[float, float]] = {}
 
-        if self.is_initialized():
-            atexit.register(self.dump_data)
+    def get_gaze_source_data(gaze_source: PathSource):
+        tmp_video = VideoReader(gaze_source.path)
+        ret, tmp_frame = tmp_video.read()
+        if not ret:
+            return None, None
+        path_splitted = gaze_source.path.split("/")
+        camera_name = (
+            path_splitted[-1].split("_")[-2]
+            + ":"
+            + path_splitted[-1].split("_")[-1].split(".")[0]
+        )
+        gaze = ChannelHandler(
+            SensorMode.OFFLINE,
+            {
+                "sequence_name": path_splitted[-2],
+                "camera_name": camera_name,
+                "width": tmp_frame.shape[1],
+                "height": tmp_frame.shape[0],
+                "gaze_coordinates": (
+                    tmp_frame.shape[1] // 2,
+                    tmp_frame.shape[0] // 2,
+                ),
+                "proximity_threshold": gaze_source.params["proximity_threshold"],
+                "approaching_threshold": gaze_source.params["approaching_threshold"],
+                "coordinates_memory_size": gaze_source.params[
+                    "coordinates_memory_size"
+                ],
+                "correct_directions": gaze_source.params["correct_directions"],
+            },
+            gaze_source.path,
+            gaze_source.new_dump,
+        )
+        return camera_name, gaze
 
     def is_initialized(self):
         return (
@@ -714,24 +761,28 @@ class GazeObjectTracking:
         return tuple(outcome)
 
 
+GazeObjectTracking.get_gaze_source_data = staticmethod(
+    GazeObjectTracking.get_gaze_source_data
+)
+
 if __name__ == "__main__":
     mode = 1
     if mode == 0:
-        ed = FileSource(
+        ed = PathSource(
             SourceMode.DUMP,
             "../nusar-2021_action_both_9065-b05a_9095_user_id_2021-02-17_122813_e.json",
         )
-        pd = FileSource(
+        pd = PathSource(
             SourceMode.DUMP,
             "../nusar-2021_action_both_9065-b05a_9095_user_id_2021-02-17_122813_p.json",
         )
         a = GlobalGazeTracking(ed, pd)
-        cameras_dump = FileSource(SourceMode.DUMP, "../cameras_dump.json", True)
-        gaze_dump = FileSource(SourceMode.DUMP, "../gaze_dump.json", True)
+        cameras_dump = PathSource(SourceMode.DUMP, "../cameras_dump.json", True)
+        gaze_dump = PathSource(SourceMode.DUMP, "../gaze_dump.json", True)
 
         a.compute_world_data(False, cameras_dump, gaze_dump, 2)
     elif mode == 1:
-        gaze = FileSource(
+        gaze = PathSource(
             SourceMode.VIDEO_REF,
             "data/video_examples/nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/HMC_84358933_mono10bit.mp4",
             "data/dump/gaze_dump.json",
@@ -742,12 +793,12 @@ if __name__ == "__main__":
                 "correct_directions": 10,
             },
         )
-        objects = FileSource(
+        objects = PathSource(
             SourceMode.SUPPORT_DUMP,
             "data/dump/instructions_annotations.json",
             "data/dump/objects_dump.json",
         )
-        gaze_target = FileSource(
+        gaze_target = PathSource(
             SourceMode.DUMP_REF, "data/dump/object_target_dump.json"
         )
         gaze_target_tracker = GazeObjectTracking(
