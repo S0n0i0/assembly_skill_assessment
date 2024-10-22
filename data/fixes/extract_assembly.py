@@ -26,7 +26,9 @@ annotations_types = {
 }
 sequences_paths = {view: f"D:/data/{view}_recordings/" for view in views}
 sequence_fps = 15
-assembly_directories = {view: f"D:/data/assembly/{view}_recordings/" for view in views}
+assembly_directories = {
+    view: f"D:/data/assembly/videos/{view}_recordings/" for view in views
+}
 offsets_paths = {
     view: f"D:/data/assembly/annotations/{view}_offsets.csv" for view in views
 }
@@ -42,7 +44,7 @@ annotations_directories = {
 }
 assembly_annotations_directories = {
     "coarse": "D:/data/assembly/annotations/coarse-annotations/",
-    "fine": "D:/data/assembly/annotations/action_anticipation/",
+    "fine": "D:/data/assembly/annotations/action_anticipation/cropped/",
     "skills": "D:/data/assembly/annotations/skill_labels/",
 }
 annotations_fps = 30
@@ -53,6 +55,7 @@ splits = ["train", "validation", "validation_challenge", "test", "test_challenge
 modes = [
     "crop_assembly",
     "check_views_diffs",
+    "remove_disassembly_rows",
 ]  # ["crop_assembly", "check_views_diffs", "remove_disassembly_rows"]
 remove_disassembly_rows = {
     "not_used": True,
@@ -103,14 +106,14 @@ if "crop_assembly" in modes:
             with open(assembly_frames_file_path) as assembly_frames_file:
                 # map start_frame, which is at annotations_fps, to the corresponding frame in the video, which is at sequence_fps
                 start_frame = int(assembly_frames_file.readline().split("	")[0])
-            start_second = start_frame // annotations_fps
+            start_second = start_frame / annotations_fps
 
             for v in first_frames[general_view][sequence]:
                 video_path = os.path.join(videos_directory, v)
                 assembly_video_path = os.path.join(assembly_videos_directory, v)
                 video = cv2.VideoCapture(video_path)
 
-                if start_second > (video.get(cv2.CAP_PROP_FRAME_COUNT) // sequence_fps):
+                if start_second > video.get(cv2.CAP_PROP_FRAME_COUNT) / sequence_fps:
                     continue
 
                 first_frames[general_view][sequence][v] = start_frame
@@ -164,10 +167,11 @@ if "crop_assembly" in modes:
 
 sequences_to_remove = {view: set() for view in views}
 non_common = {}
+sequences = {view: set(os.listdir(assembly_directories[view])) for view in views}
+all_sequences = set.intersection(*sequences.values())
+used = all_sequences.copy()
 if "check_views_diffs" in modes:
     print("\nChecking views differences")
-    sequences = {view: set(os.listdir(assembly_directories[view])) for view in views}
-    all_sequences = set.intersection(*sequences.values())
 
     # Find sequences that are in one but not the other
     print("Sequences:")
@@ -188,7 +192,7 @@ if "check_views_diffs" in modes:
                 continue
             not_used[name] = not_used_codes.NO_VIDEOS.value
         sequences_to_remove[general_view] = non_common[general_view]
-    used = all_sequences - set(not_used.keys())
+    used -= set(not_used.keys())
 
 if remove_disassembly_rows["not_used"]:
     print("\nRemoving sequences that are not used")
@@ -203,6 +207,7 @@ if remove_disassembly_rows["not_used"]:
 
     print("_Processing coarse labels")
     count = 0
+    disassembly_count = 0
     directories = os.listdir(
         os.path.join(annotations_directories["coarse"], "coarse_labels")
     )
@@ -210,7 +215,10 @@ if remove_disassembly_rows["not_used"]:
         if "_".join(coarse_sequence.split("_")[1]) in sequences_to_remove["ego"]:
             count += 1
             continue
-        elif "disassemly_" in coarse_sequence or os.path.exists(
+        elif "disassembly_" in coarse_sequence:
+            disassembly_count += 1
+            continue
+        elif os.path.exists(
             os.path.join(
                 assembly_annotations_directories["coarse"],
                 "coarse_labels/",
@@ -223,10 +231,10 @@ if remove_disassembly_rows["not_used"]:
             os.path.join(
                 annotations_directories["coarse"], "coarse_labels/", coarse_sequence
             ),
-            assembly_annotations_directories["coarse"],
+            os.path.join(assembly_annotations_directories["coarse"], "coarse_labels"),
         )
     print(
-        f"- Removed sequences ({len(directories)} -> {len(directories) - count}): {count}"
+        f"- Removed sequences ({len(directories) - disassembly_count} -> {len(directories) - disassembly_count - count}): {count}"
     )
 
     print("_Processing skills labels")

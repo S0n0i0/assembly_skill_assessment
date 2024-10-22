@@ -29,6 +29,7 @@ def clean_lmdb(
     videos_directory: str,
     original_fps: float,
     new_fps: float,
+    not_moved_frames_file: str,
     offsets_file: str | None = None,
     offsets_fps: float | None = None,
     skip_lmdb=[],
@@ -92,39 +93,43 @@ def clean_lmdb(
                 mdb_cleaned, map_size=new_size * int(1e9), readonly=False, lock=False
             )
             with env_cleaned.begin(write=True) as ec:
-                for sequence, max_frame in tqdm(max_lmdb_frames.items()):
-                    for frame_index in range(1, max_frame):
-                        original_frame_index = int(
-                            (frame_index / new_fps + offsets[sequence] / offsets_fps)
-                            * original_fps
-                        )
-                        base_key = (
-                            sequence
-                            + "/"
-                            + camera_file_name
-                            + "/"
-                            + camera_file_name
-                            + "_"
-                        )
-                        # nusar-2021_action_both_9013-a02_9013_user_id_2021-02-02_130807/HMC_21176623_mono10bit/HMC_21176623_mono10bit_0000008645.jpg
-                        # nusar-2021_action_both_9013-a02_9013_user_id_2021-02-02_130807/HMC_21110305_mono10bit/HMC_21110305_mono10bit_0000008645.jpg
-                        # nusar-2021_action_both_9013-a02_9013_user_id_2021-02-02_130807/HMC_21110305_mono10bit/HMC_21110305_mono10bit_0000008646.jpg
-                        original_key = (
-                            base_key + str(original_frame_index).zfill(10) + ".jpg"
-                        )
-                        new_key = base_key + str(frame_index).zfill(10) + ".jpg"
-                        data = extract_by_key(etc, original_key)
-                        if data is None:
-                            f.write(f"{original_key}\n")
-                            data = extract_by_key(
-                                etc,
-                                base_key
-                                + str(original_frame_index - 1).zfill(10)
-                                + ".jpg",
+                with open(not_moved_frames_file, "a") as not_moved_frames:
+                    for sequence, max_frame in tqdm(max_lmdb_frames.items()):
+                        for frame_index in range(1, max_frame):
+                            original_frame_index = int(
+                                (
+                                    frame_index / new_fps
+                                    + offsets[sequence] / offsets_fps
+                                )
+                                * original_fps
                             )
-                        if data is None:
-                            raise Exception("Key not found: " + original_key)
-                        ec.put(new_key.encode(), data.tobytes())
+                            base_key = (
+                                sequence
+                                + "/"
+                                + camera_file_name
+                                + "/"
+                                + camera_file_name
+                                + "_"
+                            )
+                            # nusar-2021_action_both_9013-a02_9013_user_id_2021-02-02_130807/HMC_21110305_mono10bit/HMC_21110305_mono10bit_0000008645.jpg
+                            # nusar-2021_action_both_9013-a02_9013_user_id_2021-02-02_130807/HMC_21110305_mono10bit/HMC_21110305_mono10bit_0000021254.jpg
+                            original_key = (
+                                base_key + str(original_frame_index).zfill(10) + ".jpg"
+                            )
+                            """if (
+                                original_key
+                                == "nusar-2021_action_both_9013-a02_9013_user_id_2021-02-02_130807/HMC_21110305_mono10bit/HMC_21110305_mono10bit_0000017292.jpg"
+                            ):
+                                cv2.VideoCapture(
+                                    sequence + "/" + camera_file_name + ".mp4"
+                                ).get(cv2.CAP_PROP_FRAME_COUNT)"""
+                            new_key = base_key + str(frame_index).zfill(10) + ".jpg"
+                            data = extract_by_key(etc, original_key)
+                            if data is None:
+                                not_moved_frames.write(original_key + "\n")
+                                continue
+                                # raise Exception("Key not found: " + original_key)
+                            ec.put(new_key.encode(), data.tobytes())
 
         env_to_clean.close()
         env_cleaned.close()
@@ -140,11 +145,11 @@ def clean_lmdb(
         return False
 
 
-to_fix_path = "D:/data/assembly/tsm_to_fix.txt"
 if __name__ == "__main__":
-    directory_to_clean = "F:/Temp/TSM_features"
+    directory_to_clean = "C:/tempa/TSM_features"
     target_directory = "D:/data/assembly/TSM_features"
     videos_directory = "D:/data/assembly/ego_recordings"
+    not_moved_frames_file = "D:/data/assembly/TSM_features/not_moved.csv"
     offsets_file = "D:/data/assembly/annotations/ego_offsets.csv"
     original_fps = 30
     new_fps = 15
@@ -160,6 +165,8 @@ if __name__ == "__main__":
         # "HMC_84358933_mono10bit",
     ]
 
+    if os.path.exists(not_moved_frames_file):
+        os.remove(not_moved_frames_file)
     all_directories = os.listdir(directory_to_clean)
     directories = [
         d
@@ -180,6 +187,7 @@ if __name__ == "__main__":
             videos_directory,
             original_fps,
             new_fps,
+            not_moved_frames_file,
             offsets_file,
             offsets_fps,
             skip_lmdb,

@@ -247,6 +247,10 @@ def is_old_movement(
     return found
 
 
+def get_values(values: list[str], split: str):
+    return values[:2] + values[-2:] if split == "test" else values
+
+
 annotations_directories = {
     "fine": "D:/data/assembly/annotations/action_anticipation/cropped",  # Splits directory
     "skills": "D:/data/assembly/annotations/skill_labels/",  # Skills directory
@@ -327,7 +331,9 @@ for split in people_per_split:
 
             if "values" not in data[person][sequence]:
                 data[person][sequence]["values"] = []
-            data[person][sequence]["values"].append(values)
+            data[person][sequence]["values"].append(
+                values
+            )  # TODO: sistemare se values arrivano da test (non ci sono tutte le informazioni)
 
             if sequence != last_sequence[0]:
                 actual_splits_order[split].append(sequence)
@@ -484,7 +490,9 @@ if save:
                 person = sequence.person
                 for row_values in data[person][sequence]["values"]:
                     for view in data[person][sequence]["views"]:
-                        f.write(f"{id},{sequence}/{view},{','.join(row_values)}\n")
+                        f.write(
+                            f"{id},{sequence}/{view},{','.join(get_values(row_values, split))}\n"
+                        )
                     id += 1
 
     # Creates additional splits
