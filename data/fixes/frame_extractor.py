@@ -49,15 +49,6 @@ target_paths = {view: f"D:/data/assembly/{view}_recordings/" for view in views}
 image_tmpl = "{:010d}.jpg"
 bitrate_target = "8M"
 use_ffmpeg = True
-offsets = {}
-with open("D:/data/assembly/annotations/ego_offsetsa.csv", "r") as f:
-    lines = f.readlines()
-for line in lines[1:]:
-    _, file, offset = line.strip().split(",")
-    sequence, view = file.split("/")
-    if sequence not in offsets:
-        offsets[sequence] = {}
-    offsets[sequence][view[:-4]] = int(offset)
 
 sequences = {}
 for general_view in views:
