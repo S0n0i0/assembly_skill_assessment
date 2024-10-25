@@ -1,9 +1,17 @@
 import os
 import sys
 from tqdm import tqdm
-import ffmpeg
 import concurrent.futures
 import cv2
+
+try:
+    import ffmpeg
+
+    bitrate_target = "8M"
+    use_ffmpeg = True
+except:
+    use_ffmpeg = False
+    compression_precentage = 85
 
 
 def process_video(video, sequence, general_view, use_ffmpeg):
@@ -28,15 +36,45 @@ def process_video(video, sequence, general_view, use_ffmpeg):
                 .run(quiet=True, overwrite_output=True)
             )
         else:
+            mjpeg_video_path = os.path.join(
+                target_paths[general_view], sequence, view, view + ".avi"
+            )
+
             cap = cv2.VideoCapture(absolute_video_path)
+            frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+
+            # MJPEG con bitrate
+            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+            out = cv2.VideoWriter(
+                mjpeg_video_path, fourcc, fps, (frame_width, frame_height)
+            )
+
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                out.write(frame)
+
+            cap.release()
+            out.release()
+
+            # Estrarre i frame dall'output MJPEG
+            cap = cv2.VideoCapture(mjpeg_video_path)
             idx = 1
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
                     break
-                cv2.imwrite(output_template.format(idx), frame)
+                cv2.imwrite(
+                    output_template.format(idx),
+                    frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, compression_precentage],
+                )
                 idx += 1
             cap.release()
+            os.remove(mjpeg_video_path)
     except ffmpeg.Error as e:
         print(
             f"Errore durante l'elaborazione del video {video_path}: {e.stderr.decode('utf-8')}",
@@ -48,8 +86,6 @@ views = ["fixed", "ego"]  # ["ego","fixed"]
 origin_paths = {view: f"D:/data/assembly/videos/{view}_recordings/" for view in views}
 target_paths = {view: f"D:/data/assembly/{view}_recordings/" for view in views}
 image_tmpl = "{:010d}.jpg"
-bitrate_target = "8M"
-use_ffmpeg = True
 
 sequences = {}
 for general_view in views:
