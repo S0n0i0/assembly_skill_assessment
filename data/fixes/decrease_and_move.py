@@ -5,7 +5,7 @@ import paramiko.client
 
 
 def decrease_fps_and_send(
-    input_directory, output_directory, no_proper_videos_file_path
+    input_directory, output_directory, no_proper_videos_file_path, decrease_fps=False
 ):
     # Get the directories within the given directory path
     directories = [
@@ -20,12 +20,11 @@ def decrease_fps_and_send(
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
     client.connect(
-        "marzola.disi.unitn.it",
-        username="simone.compri",
-        password="Simone@2000",
+        "",
+        username="",
+        password="",
     )
     sftp = client.open_sftp()
-    print(output_directory + "/" + no_proper_videos_file_path)
     with sftp.file(
         output_directory + "/" + no_proper_videos_file_path, mode="a", bufsize=1
     ) as no_proper_videos:
@@ -81,37 +80,35 @@ def decrease_fps_and_send(
                         + target_dir
                         + ")"
                     )
-                    print()
                     # Iterate over the files
-                    # tmp_input_directory = "D" + input_directory[1:]
-                    for file in files:
+                    for i, file in enumerate(files):
                         # Construct the input and output paths
-                        """input_path = os.path.join(
+                        input_path = os.path.join(
                             input_directory, directory, file
-                        ).replace("\\", "/")"""
-                        output_path = os.path.join(
-                            input_directory, directory, file  # f"decreased_{file}"
                         ).replace("\\", "/")
 
-                        # Decrease the fps using ffmpeg-python
-                        # ffmpeg.input(input_path).output(output_path, r=15).run()
-                        """(
-                            ffmpeg.input(input_path)
-                            .filter("fps", fps=15, round="up")
-                            .output(output_path)
-                            .run()
-                        )"""
+                        if decrease_fps:
+                            decreased_path = os.path.join(
+                                input_directory, directory, f"decreased_{file}"
+                            ).replace("\\", "/")
 
+                            # Decrease the fps using ffmpeg-python
+                            (
+                                ffmpeg.input(input_path)
+                                .filter("fps", fps=15, round="up")
+                                .output(decreased_path)
+                                .run()
+                            )
+
+                        output_path = f"{output_directory}/{directory}/{file}"
                         # Send the file to the SSH server
-                        print(
-                            "-",
-                            output_path,
-                            "->",
-                            f"{output_directory}/{directory}/{file}",
-                        )
-                        sftp.put(output_path, f"{output_directory}/{directory}/{file}")
-
-                        os.remove(output_path)
+                        if decrease_fps:
+                            print(f"{i}/{len(files)-1}) File (decreased): {file}")
+                            sftp.put(decreased_path, output_path)
+                            os.remove(decreased_path)
+                        else:
+                            print(f"{i}/{len(files)-1}) File: {file}")
+                            sftp.put(input_path, output_path)
 
     sftp.close()
     client.close()
@@ -119,8 +116,9 @@ def decrease_fps_and_send(
 
 # Example usage
 decrease_fps_and_send(
-    "D:/data/fixed_recordings",
-    "/home/simone.compri/data/fixed_recordings",
+    "D:/data/assembly/videos/fixed_recordings/",
+    "/home/simone.compri/data/videos/fixed_recordings/",
     "no_proper_viedos.txt",
+    False,
 )
 print("Done")

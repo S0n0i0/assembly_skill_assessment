@@ -3,26 +3,39 @@ import sys
 from tqdm import tqdm
 import ffmpeg
 import concurrent.futures
+import cv2
 
 
-def process_video(video, sequence, general_view):
+def process_video(video, sequence, general_view, use_ffmpeg):
     video_path = sequence + "/" + video
     absolute_video_path = os.path.join(origin_paths[general_view], video_path)
-    output_directory = os.path.join(target_paths[general_view], sequence)
+    output_directory = os.path.join(target_paths[general_view], sequence, video[:-4])
 
     output_template = os.path.join(output_directory, video[:-4] + "_frame_%010d.jpg")
 
     try:
-        (
-            ffmpeg.input(absolute_video_path)
-            .output(
-                output_template,
-                start_number=1,
-                vcodec="mjpeg",
-                loglevel="quiet",
+        os.makedirs(output_directory, exist_ok=True)
+        if use_ffmpeg:
+            (
+                ffmpeg.input(absolute_video_path)
+                .output(
+                    output_template,
+                    start_number=1,
+                    vcodec="mjpeg",
+                    loglevel="quiet",
+                )
+                .run(quiet=True, overwrite_output=True)
             )
-            .run(quiet=True, overwrite_output=True)
-        )
+        else:
+            cap = cv2.VideoCapture(absolute_video_path)
+            idx = 1
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                cv2.imwrite(output_template.format(idx), frame)
+                idx += 1
+            cap.release()
     except ffmpeg.Error as e:
         print(
             f"Errore durante l'elaborazione del video {video_path}: {e.stderr.decode('utf-8')}",
@@ -33,8 +46,18 @@ def process_video(video, sequence, general_view):
 views = ["fixed", "ego"]  # ["ego","fixed"]
 origin_paths = {view: f"D:/data/assembly/videos/{view}_recordings/" for view in views}
 target_paths = {view: f"D:/data/assembly/{view}_recordings/" for view in views}
-image_tmpl = "frame_{:010d}.jpg"
+image_tmpl = "{:010d}.jpg"
 bitrate_target = "8M"
+use_ffmpeg = True
+offsets = {}
+with open("D:/data/assembly/annotations/ego_offsetsa.csv", "r") as f:
+    lines = f.readlines()
+for line in lines[1:]:
+    _, file, offset = line.strip().split(",")
+    sequence, view = file.split("/")
+    if sequence not in offsets:
+        offsets[sequence] = {}
+    offsets[sequence][view[:-4]] = int(offset)
 
 sequences = {}
 for general_view in views:
@@ -67,12 +90,18 @@ for general_view in views:
                 absolute_video_path = os.path.join(
                     origin_paths[general_view], video_path
                 )
-                probe = ffmpeg.probe(absolute_video_path)
-                total_frames = int(
-                    next(
-                        (s for s in probe["streams"] if s["codec_type"] == "video"), {}
-                    ).get("nb_frames", 0)
-                )
+                if use_ffmpeg:
+                    probe = ffmpeg.probe(absolute_video_path)
+                    total_frames = int(
+                        next(
+                            (s for s in probe["streams"] if s["codec_type"] == "video"),
+                            {},
+                        ).get("nb_frames", 0)
+                    )
+                else:
+                    cap = cv2.VideoCapture(absolute_video_path)
+                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    cap.release()
                 frames.update(
                     [
                         f"{video[:-4]}_{image_tmpl.format(idx)}"
@@ -87,7 +116,9 @@ for general_view in views:
 
             for video in videos:
                 futures.append(
-                    executor.submit(process_video, video, sequence, general_view)
+                    executor.submit(
+                        process_video, video, sequence, general_view, use_ffmpeg
+                    )
                 )
 
             concurrent.futures.wait(futures)

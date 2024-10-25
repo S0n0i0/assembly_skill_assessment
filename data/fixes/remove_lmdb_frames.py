@@ -4,23 +4,7 @@ import numpy as np
 import os
 from tqdm import tqdm
 
-
-def extract_by_key(env, key, verbose=False):
-    """
-    input:
-        env: lmdb environment initialized (see main function)
-        key: the frame number in lmdb key format for which the feature is to be extracted
-             the lmdb key format is '{sequence_name}/{view_name}/{view_name}_{frame_no:010d}.jpg'
-             e.g. nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/HMC_84346135_mono10bit/HMC_84346135_mono10bit_0000000001.jpg
-    output: a 2048-D np-array (TSM feature corresponding to the key)
-    """
-    data = env.get(key.encode("utf-8"))
-    if verbose and data is None:
-        print(f"[ERROR] Key {key} does not exist !!!")
-    if data is None:
-        return None
-    else:
-        return np.frombuffer(data, "float32")  # convert to numpy array
+from utils.functions import extract_by_key
 
 
 def clean_lmdb(

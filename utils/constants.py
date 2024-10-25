@@ -51,4 +51,5 @@ first_lines = {
         "noun_cls",
     ],
     "offsets": ["id", "video", "start_frame"],
+    "actions_mapping": ["id", "old_action_id", "new_action_id"],
 }
