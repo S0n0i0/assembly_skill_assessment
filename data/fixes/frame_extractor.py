@@ -8,10 +8,11 @@ import cv2
 
 def process_video(video, sequence, general_view, use_ffmpeg):
     video_path = sequence + "/" + video
+    view = video[:-4]
     absolute_video_path = os.path.join(origin_paths[general_view], video_path)
-    output_directory = os.path.join(target_paths[general_view], sequence, video[:-4])
+    output_directory = os.path.join(target_paths[general_view], sequence, view)
 
-    output_template = os.path.join(output_directory, video[:-4] + "_frame_%010d.jpg")
+    output_template = os.path.join(output_directory, view + "_%010d.jpg")
 
     try:
         os.makedirs(output_directory, exist_ok=True)
