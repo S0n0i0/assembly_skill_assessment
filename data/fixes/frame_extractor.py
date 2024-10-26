@@ -20,7 +20,9 @@ def process_video(video, sequence, general_view, use_ffmpeg):
     absolute_video_path = os.path.join(origin_paths[general_view], video_path)
     output_directory = os.path.join(target_paths[general_view], sequence, view)
 
-    output_template = os.path.join(output_directory, view + "_%010d.jpg")
+    output_template = os.path.join(
+        output_directory, view + ("_%010d.jpg" if use_ffmpeg else "_{:010d}.jpg")
+    )
 
     try:
         os.makedirs(output_directory, exist_ok=True)
