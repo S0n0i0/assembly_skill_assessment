@@ -2,7 +2,7 @@ from utils.classes import LogManager
 
 log_manager = LogManager()
 
-trainval_first_line = [
+fine_trainval_first_line = [
     "id",
     "video",
     "start_frame",
@@ -18,28 +18,37 @@ trainval_first_line = [
     "is_shared",
     "is_rgb",
 ]
+skill_trainval_first_line = ["id", "video", "start_frame", "end_frame", "skill_level"]
 first_lines = {
     "splits": {
-        "train": trainval_first_line,
-        "validation": trainval_first_line,
-        "trainval": trainval_first_line,
-        "validation_challenge": trainval_first_line,
-        "test": [
-            "id",
-            "video",
-            "start_frame",
-            "end_frame",
-            "is_shared",
-            "is_rgb",
-        ],
-        "test_challenge": [
-            "id",
-            "video",
-            "start_frame",
-            "end_frame",
-            "is_shared",
-            "is_rgb",
-        ],
+        "fine": {
+            "train": fine_trainval_first_line,
+            "validation": fine_trainval_first_line,
+            "trainval": fine_trainval_first_line,
+            "validation_challenge": fine_trainval_first_line,
+            "test": [
+                "id",
+                "video",
+                "start_frame",
+                "end_frame",
+                "is_shared",
+                "is_rgb",
+            ],
+            "test_challenge": [
+                "id",
+                "video",
+                "start_frame",
+                "end_frame",
+                "is_shared",
+                "is_rgb",
+            ],
+        },
+        "skill": {
+            "train": skill_trainval_first_line,
+            "validation": skill_trainval_first_line,
+            "trainval": skill_trainval_first_line,
+            "test": ["id", "video", "start_frame", "end_frame"],
+        },
     },
     "actions": [
         "id",
