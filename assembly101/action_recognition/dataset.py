@@ -12,6 +12,8 @@ import time
 from collections import OrderedDict
 from multiprocessing import Lock
 
+from utils.functions import get_offsets
+
 
 class VideoRecord(object):
     def __init__(self, row):
@@ -43,6 +45,9 @@ class TSNDataSet(data.Dataset):
         new_length=1,
         modality="RGB",
         image_tmpl="frame_{:010d}.jpg",
+        video_fps=15,
+        annotations_fps=30,
+        offsets_path=None,
         transform=None,
         force_grayscale=False,
         random_shift=True,
@@ -56,17 +61,14 @@ class TSNDataSet(data.Dataset):
         self.new_length = new_length
         self.modality = modality
         self.image_tmpl = image_tmpl
+        self.video_fps = video_fps
+        self.annotations_fps = annotations_fps
+        self.offsets = None
+        if offsets_path is not None:
+            self.offsets = get_offsets(offsets_path)
         self.transform = transform
         self.random_shift = random_shift
         self.test_mode = test_mode
-
-        self.use_video = True
-        self.cache = OrderedDict()
-        self.max_size = 10
-        self.timeout = 300
-        # create a lock
-        self.read_lock = Lock()
-        self.write_lock = Lock()
 
         if self.modality == "RGBDiff":
             # Diff needs one more image to calculate diff
@@ -74,15 +76,27 @@ class TSNDataSet(data.Dataset):
 
         self._parse_list()
 
+    def map_frame(self, i, offset):
+        return (i - offset) * self.video_fps // self.annotations_fps + 1
+
     def _load_image(self, directory, idx):
         if self.modality == "RGB" or self.modality == "RGBDiff":
             # print(os.path.join(directory, self.image_tmpl.format(idx)))
+            divided_directory = directory.split("/")
+            offset = (
+                self.offsets[divided_directory[-2]][divided_directory[-1]]
+                if self.offsets is not None
+                else 0
+            )
+            actual_idx = self.map_frame(idx, offset)
 
             return [
                 Image.open(
                     os.path.join(
                         directory,
-                        directory.split("/")[-1] + "_" + self.image_tmpl.format(idx),
+                        divided_directory[-1]
+                        + "_"
+                        + self.image_tmpl.format(actual_idx),
                     )
                 ).convert("RGB")
             ]
@@ -102,18 +116,6 @@ class TSNDataSet(data.Dataset):
             ).convert("L")
 
             return [x_img, y_img]
-
-    def _load_video_image(self, video, idx, framerate_ratio=4):
-        if self.modality == "RGB" or self.modality == "RGBDiff":
-            actual_idx = idx // framerate_ratio
-            video.set(cv2.CAP_PROP_POS_FRAMES, actual_idx)
-            _, frame = video.read()
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame = Image.fromarray(frame)
-
-            return [frame]
-        else:
-            raise ValueError("Not implemented yet")
 
     def _parse_list(self):
         tmp = [x.strip().split(" ") for x in open(self.list_file)]
@@ -172,95 +174,21 @@ class TSNDataSet(data.Dataset):
         else:
             segment_indices = self._get_test_indices(record)
 
-        return record, segment_indices, self.get(record, segment_indices)
+        process_data = self.get_processed_frames(record, segment_indices)
 
-    def _remove_oldest_video(self):
-        oldest_path = next(iter(self.cache))
-        self._close_video(oldest_path)
+        return process_data, record.label
 
-    def _close_video(self, path):
-        self.cache[path]["video"].release()
-        del self.cache[path]
-
-    def close_all(self):
-        for path in list(self.cache.keys()):
-            self._close_video(path)
-
-    def _remove_expired_videos(self, current_time):
-        expired_paths = [
-            path
-            for path, data in self.cache.items()
-            if current_time - data["last_access"] > self.timeout
-        ]
-        for path in expired_paths:
-            self._close_video(path)
-
-    def _remove_expired_videos(self, current_time):
-        expired_paths = [
-            path
-            for path, data in self.cache.items()
-            if current_time - data["last_access"] > self.timeout
-        ]
-        for path in expired_paths:
-            self._close_video(path)
-
-    def _remove_oldest_video(self):
-        oldest_path = next(iter(self.cache))
-        self._close_video(oldest_path)
-
-    def _close_video(self, path):
-        self.cache[path]["video"].release()
-        del self.cache[path]
-
-    def close_all(self):
-        with self.write_lock:
-            for path in list(self.cache.keys()):
-                self._close_video(path)
-
-    def get_processed_frames(self, video, record, indices):
+    def get_processed_frames(self, record, indices):
         images = list()
         for seg_ind in indices:
             p = int(seg_ind)
             for _ in range(self.new_length):
-                seg_imgs = (
-                    self._load_video_image(video, p)
-                    if self.use_video
-                    else self._load_image(record.path, p)
-                )
+                seg_imgs = self._load_image(record.path, p)
                 images.extend(seg_imgs)
                 if p < record.num_frames:
                     p += 1
 
-        return images, self.transform(images)
-
-    def get(self, record, indices):
-        if self.use_video:
-            current_time = time.time()
-            with self.read_lock:
-                if record.path in self.cache:
-                    self.cache[record.path]["last_access"] = current_time
-                    cap = self.cache[record.path]["video"]
-                else:
-                    with self.write_lock:
-                        # Remove expired videos
-                        self._remove_expired_videos(current_time)
-                        if len(self.cache) >= self.max_size:
-                            self._remove_oldest_video()
-
-                        cap = cv2.VideoCapture(record.path + ".mp4")
-                        self.cache[record.path] = {
-                            "video": cap,
-                            "last_access": current_time,
-                        }
-                original_data, process_data = self.get_processed_frames(
-                    cap, record, indices
-                )
-        else:
-            original_data, process_data = self.get_processed_frames(
-                cap, record, indices
-            )
-
-        return original_data, process_data, record.label
+        return self.transform(images)
 
     def __len__(self):
         return len(self.video_list)

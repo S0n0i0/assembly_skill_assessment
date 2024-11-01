@@ -64,3 +64,16 @@ def extract_by_key(env, key, verbose=False):
         return None
     else:
         return np.frombuffer(data, "float32")  # convert to numpy array
+
+
+def get_offsets(offsets_path):
+    offsets = {}
+    with open(offsets_path, "r") as f:
+        lines = f.readlines()
+    for line in lines[1:]:
+        _, file, offset = line.strip().split(",")
+        sequence, view = file.split("/")
+        if sequence not in offsets:
+            offsets[sequence] = {}
+        offsets[sequence][view[:-4]] = int(offset)
+    return offsets

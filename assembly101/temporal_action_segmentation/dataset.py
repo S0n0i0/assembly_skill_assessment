@@ -34,6 +34,19 @@ def collate_fn_override(data):
     )
 
 
+def get_offsets(offsets_path):
+    offsets = {}
+    with open(offsets_path, "r") as f:
+        lines = f.readlines()
+    for line in lines[1:]:
+        _, file, offset = line.strip().split(",")
+        sequence, view = file.split("/")
+        if sequence not in offsets:
+            offsets[sequence] = {}
+        offsets[sequence][view[:-4]] = int(offset)
+    return offsets
+
+
 class AugmentDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -43,6 +56,7 @@ class AugmentDataset(torch.utils.data.Dataset):
         actions_dict,
         zoom_crop=(0.5, 2),
         smallest_cut=1.0,
+        offsets_path=None,
     ):
         self.fold = fold
         self.max_frames_per_video = args.max_frames_per_video
@@ -53,12 +67,17 @@ class AugmentDataset(torch.utils.data.Dataset):
         self.chunk_size = args.chunk_size
         self.num_class = args.num_class
         self.zoom_crop = zoom_crop
-        self.validation = True if fold == "val" else False
+        self.validation = True if fold == "validation" else False
         self.split = args.split
         self.VIEWS = args.VIEWS
         self.actions_dict = actions_dict
+        self.lmdb_fps = args.lmdb_fps
+        self.annotations_fps = args.annotations_fps
+        self.offsets = get_offsets(offsets_path) if offsets_path is not None else None
+
         with open(
-            "D:/data/models/temporal_action_segmentation/statistic_input.pkl", "rb"
+            "D:/data/models/temporal_action_segmentation/statistic_input.pkl",
+            "rb",
         ) as f:
             self.statistic = pkl.load(f)
         self.data = self.make_data_set(fold_file_name)
@@ -68,6 +87,9 @@ class AugmentDataset(torch.utils.data.Dataset):
             view: lmdb.open(f"{self.base_dir_name}/{view}", readonly=True, lock=False)
             for view in self.VIEWS
         }
+
+    def map_frame(self, annotation_frame, offset):
+        return (annotation_frame - offset) * self.lmdb_fps // self.annotations_fps + 1
 
     def read_files(self, list_files, fold_file_name):
         data = []
@@ -83,14 +105,12 @@ class AugmentDataset(torch.utils.data.Dataset):
             if self.split == "train_val":
                 files = [
                     "train_coarse_assembly.txt",
-                    "train_coarse_disassembly.txt",
-                    "val_coarse_assembly.txt",
-                    "val_coarse_disassembly.txt",
+                    "validation_coarse_assembly.txt",
                 ]
             elif self.split == "train":
-                files = ["train_coarse_assembly.txt", "train_coarse_disassembly.txt"]
-        elif self.fold == "val":
-            files = ["val_coarse_assembly.txt", "val_coarse_disassembly.txt"]
+                files = ["train_coarse_assembly.txt"]
+        elif self.fold == "validation":
+            files = ["validation_coarse_assembly.txt"]
         else:
             print("unknown split, quit")
             exit(1)
@@ -99,14 +119,24 @@ class AugmentDataset(torch.utils.data.Dataset):
         data_arr = []
         for i, video_id in enumerate(data):
             video_id = video_id.split(".txt")[0]
+            sequence = video_id.replace("disassembly_", "").replace("assembly_", "")
             filename = os.path.join(self.ground_truth_files_dir, video_id + ".txt")
 
             recog_content, indexs = [], []
+            offset = (
+                self.offsets[sequence][list(self.offsets[sequence].keys())[0]]
+                if self.offsets is not None
+                else 0
+            )
             with open(filename, "r") as f:
                 lines = f.readlines()
                 for l in lines:
                     tmp = l.split("\t")
-                    start_l, end_l, label_l = int(tmp[0]), int(tmp[1]), tmp[2]
+                    start_l, end_l, label_l = (
+                        self.map_frame(int(tmp[0]), offset),
+                        self.map_frame(int(tmp[1]), offset),
+                        tmp[2],
+                    )
                     indexs.extend([start_l, end_l])
                     recog_content.extend([label_l] * (end_l - start_l))
 
@@ -171,13 +201,14 @@ class AugmentDataset(torch.utils.data.Dataset):
         ele_dict = self.data[index]
         st_frame = ele_dict["st_frame"]
         end_frame = ele_dict["end_frame"]
+        sequence = ele_dict["video_id"]
         view = ele_dict["view"]
         vid_type = ele_dict["type"]
 
         elements = []
         with self.env[view].begin() as e:
             for i in range(st_frame, end_frame):
-                key = ele_dict["video_id"] + self.frames_format.format(view, view, i)
+                key = sequence + self.frames_format.format(view, view, i)
                 data = e.get(key.strip().encode("utf-8"))
                 if data is None:
                     print("no available data.")
@@ -284,7 +315,17 @@ def collate_fn_override_test(data):
 
 
 class AugmentDataset_test(torch.utils.data.Dataset):
-    def __init__(self, args, fold, fold_file_name, actions_dict, chunk_size):
+    def __init__(
+        self,
+        args,
+        fold,
+        fold_file_name,
+        actions_dict,
+        chunk_size,
+        annotations_fps=30,
+        lmdb_fps=15,
+        offsets_path=None,
+    ):
         self.fold = fold
         self.max_frames_per_video = args.max_frames_per_video
         self.feature_size = args.feature_size
@@ -294,8 +335,12 @@ class AugmentDataset_test(torch.utils.data.Dataset):
         self.num_class = args.num_class
         self.VIEWS = args.VIEWS
         self.actions_dict = actions_dict
+        self.lmdb_fps = lmdb_fps
+        self.annotations_fps = annotations_fps
+        self.offsets = get_offsets(offsets_path) if offsets_path is not None else None
         with open(
-            "D:/data/models/temporal_action_segmentation/statistic_input.pkl", "rb"
+            "D:/data/models/temporal_action_segmentation/statistic_input.pkl",
+            "rb",
         ) as f:
             self.statistic = pkl.load(f)
         self.chunk_size_arr = chunk_size
@@ -318,10 +363,10 @@ class AugmentDataset_test(torch.utils.data.Dataset):
 
     def make_data_set(self, fold_file_name):
         label_name_to_label_id_dict = self.actions_dict
-        if self.fold == "val":
-            files = ["val_coarse_assembly.txt", "val_coarse_disassembly.txt"]
+        if self.fold == "validation":
+            files = ["validation_coarse_assembly.txt"]
         elif self.fold == "test":
-            files = ["test_coarse_assembly.txt", "test_coarse_disassembly.txt"]
+            files = ["test_coarse_assembly.txt"]
         else:
             print("Unknown data folder")
             exit(3)
@@ -409,13 +454,17 @@ class AugmentDataset_test(torch.utils.data.Dataset):
         st_frame = ele_dict["st_frame"]
         end_frame = ele_dict["end_frame"]
         aug_chunk_size = ele_dict["chunk_size"]
+        sequence = ele_dict["video_id"]
         view = ele_dict["view"]
         vid_type = ele_dict["type"]
+        offset = self.offsets[sequence][view] if self.offsets is not None else 0
 
         elements = []
         with self.env[view].begin() as e:
             for i in range(st_frame, end_frame):
-                key = ele_dict["video_id"] + self.frames_format.format(view, view, i)
+                key = ele_dict["video_id"] + self.frames_format.format(
+                    view, view, (i - offset) * self.lmdb_fps / self.annotations_fps
+                )
                 data = e.get(key.strip().encode("utf-8"))
                 if data is None:
                     print("no available data.")

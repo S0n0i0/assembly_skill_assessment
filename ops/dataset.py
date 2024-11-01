@@ -2,12 +2,16 @@ from torch.utils.data import Dataset
 import json
 from enum import Enum
 
-from assembly101.action_anticipation.dataset import SequenceDataset
-from assembly101.action_recognition.dataset import TSNDataSet
-from assembly101.temporal_action_segmentation.dataset import AugmentDataset
+import assembly101.action_anticipation.dataset as aa_dataset
+import assembly101.action_recognition.dataset as ar_dataset
+import assembly101.temporal_action_segmentation.dataset as tas_dataset
 
 from utils.classes import PathSource
-from utils.enums import PathType, LogCode, DisplayLevel
+from utils.enums import (
+    PathType,
+    LogCode,
+    DisplayLevel,
+)
 from utils.constants import log_manager
 
 
@@ -20,9 +24,12 @@ class DatasetOpCode(Enum):
 class CombinedDataset(Dataset):
     def __init__(
         self,
-        sequence_dataset_args,
-        tsn_dataset_args,
-        augment_dataset_args,
+        # split: SimpleSplits | ComposedSplit | ChallengeSplits,
+        # fine_splits_path: PathSource,
+        # coarse_annotations_path: PathSource,
+        sequence_dataset_args: PathSource | dict,
+        tsn_dataset_args: PathSource | dict,
+        augment_dataset_args: PathSource | dict,
         pose_source: PathSource,
         gaze_source: PathSource | None = None,
         object_source: PathSource | None = None,
@@ -61,11 +68,49 @@ class CombinedDataset(Dataset):
             if pose_source is not None:
                 if pose_source.type != PathType.FILE:
                     raise ValueError("Pose source must be a file")
-            self.pose_source: dict | None = json.load(open(pose_source.path))
+            self.pose_source: dict = json.load(open(pose_source.path))
 
-            self.sequence_dataset = SequenceDataset(**sequence_dataset_args)
-            self.tsn_dataset = TSNDataSet(**tsn_dataset_args)
-            self.augment_dataset = AugmentDataset(**augment_dataset_args)
+            if isinstance(sequence_dataset_args, PathSource):
+                self.sequence_dataset = None
+            else:
+                self.sequence_dataset = aa_dataset.SequenceDataset(
+                    **sequence_dataset_args
+                )
+                self.fine_support, self.fine_support_order = self.gen_supports(
+                    self.sequence_dataset.video_list,
+                    lambda item: item.path.split("/")[0],
+                    lambda item: item.path.split("/")[1],
+                    lambda item: item.start_frame,
+                    lambda item: item.end_frame,
+                )
+            if isinstance(tsn_dataset_args, PathSource):
+                self.tsn_dataset = None
+            else:
+                self.tsn_dataset = ar_dataset.TSNDataSet(**tsn_dataset_args)
+                if isinstance(sequence_dataset_args, PathSource):
+                    self.fine_support, self.fine_support_order = self.gen_supports(
+                        self.tsn_dataset.video_list,
+                        lambda item: item.path.split("/")[0],
+                        lambda item: item.path.split("/")[1],
+                        lambda item: item.start_frame,
+                        lambda item: item.num_frames
+                        + item.start_frame
+                        - 1,  # 1 = modifier in gen_fine_labels.py
+                    )
+
+            if isinstance(augment_dataset_args, PathSource):
+                self.augment_dataset = None
+            else:
+                self.augment_dataset = tas_dataset.AugmentDataset(
+                    **augment_dataset_args
+                )
+                self.coarse_support, self.coarse_order_support = self.gen_supports(
+                    self.augment_dataset.data,
+                    lambda item: item["video_id"],
+                    lambda item: item["view"],
+                    lambda item: item["st_frame"],
+                    lambda item: item["end_frame"],
+                )
 
         except:
             self.gaze_source = None
@@ -130,3 +175,33 @@ class CombinedDataset(Dataset):
         }
 
         return combined_data
+
+    def gen_supports(
+        self, source: list, sequence_fn, view_fn, start_frame_fn=None, end_frame_fn=None
+    ):
+        support = {}
+        support_order = {}
+        for i, item in enumerate(source):
+            sequence = sequence_fn(item)
+            view = view_fn(item)
+            if sequence not in support:
+                support[sequence] = {}
+            if view not in support[sequence]:
+                support[sequence][view] = {}
+            start_frame = int(start_frame_fn(item))
+            support[sequence][view][start_frame] = {
+                "index": i,
+                "end_frame": int(end_frame_fn(item)),
+            }
+
+            if sequence not in support_order:
+                support_order[sequence] = {}
+            if view not in support_order[sequence]:
+                support_order[sequence][view] = []
+            support_order[sequence][view].append(start_frame)
+
+        for sequence in support_order:
+            for view in support_order[sequence]:
+                support_order[sequence][view].sort()
+
+        return support, support_order

@@ -12,6 +12,9 @@ import pandas as pd
 from torch.utils import data
 from tqdm import tqdm
 
+from utils.functions import get_offsets
+from utils.constants import first_lines
+
 
 class VideoRecord(object):
     def __init__(self, row):
@@ -22,11 +25,11 @@ class VideoRecord(object):
         return self._data[0]
 
     @property
-    def start(self):
+    def start_frame(self):
         return int(self._data[1])
 
     @property
-    def end(self):
+    def end_frame(self):
         return int(self._data[2])
 
     @property
@@ -44,21 +47,24 @@ class SequenceDataset(data.Dataset):
         path_to_lmdb,
         path_to_csv,
         time_step=1,
-        label_type="action",
-        img_tmpl="frame_{:010d}.jpg",
+        label_type="action_id",
+        img_tmpl="{:010d}.jpg",
         challenge=False,
-        fps=15,
+        annotations_fps=30,
+        lmdb_fps=15,
+        offsets_path=None,
         args=None,
     ):
         """
         Inputs:
             path_to_lmdb: path to the folder containing the LMDB dataset
-            path_to_csv: path to training/validation csv
+            path_to_csv: path to train/validation csv
             time_step: in seconds
-            label_type: which label to return (verb, object, or action)
+            label_type: which label to return (verb_id, noun_id, or action_id)
             img_tmpl: image template to load the features
             challenge: allows to load csvs containing only time-stamp for the challenge
-            fps: framerate
+            annotations_fps: framerate of annotations
+            lmdb_fps: framerate of the features contained in LMDB datasets
         """
 
         # read the csv file
@@ -66,36 +72,25 @@ class SequenceDataset(data.Dataset):
             self.annotations = pd.read_csv(
                 path_to_csv,
                 header=0,
-                names=["id", "video", "start", "end", "shared", "rgb"],
+                names=first_lines["splits"]["fine"]["test_challenge"],
             )
         else:
             self.annotations = pd.read_csv(
                 path_to_csv,
                 header=0,
-                names=[
-                    "id",
-                    "video",
-                    "start",
-                    "end",
-                    "action",
-                    "verb",
-                    "object",
-                    "action_cls",
-                    "verb_cls",
-                    "object_cls",
-                    "toyid",
-                    "toyname",
-                    "shared",
-                    "rgb",
-                ],
+                names=first_lines["splits"]["fine"]["trainval"],
             )
 
         self.challenge = challenge
         self.path_to_lmdb = path_to_lmdb
         self.time_step = time_step
-        self.fps = fps
+        self.annotations_fps = annotations_fps
+        self.lmdb_fps = lmdb_fps
         self.label_type = label_type
         self.img_tmpl = img_tmpl
+        self.offsets = None
+        if offsets_path is not None:
+            self.offsets = get_offsets(offsets_path)
 
         self.recent_sec1 = args.recent_sec1
         self.recent_sec2 = args.recent_sec2
@@ -131,6 +126,9 @@ class SequenceDataset(data.Dataset):
             for view in self.views
         }
 
+    def map_frame(self, i, offset):
+        return (i - offset) * self.lmdb_fps // self.annotations_fps + 1
+
     def __populate_lists(self):
         count_debug = 0
         """ Samples a sequence for each action and populates the lists. """
@@ -151,7 +149,7 @@ class SequenceDataset(data.Dataset):
                 continue
 
             # sample frames before the beginning of the action
-            recent_f, spanning_f = self.__get_snippet_features(a.start, video)
+            recent_f, spanning_f = self.__get_snippet_features(a.start_frame, video)
 
             if spanning_f is not None and recent_f is not None:
                 _labels = -1
@@ -161,7 +159,7 @@ class SequenceDataset(data.Dataset):
                     else:
                         _labels = a[self.label_type]
 
-                tmp = [video, a.start + 1, a.end + 1, _labels, a.id]
+                tmp = [video, a.start_frame + 1, a.end_frame + 1, _labels, a.id]
                 self.video_list.append(VideoRecord(tmp))
             else:
                 self.discarded_ids.append(a.id)
@@ -186,7 +184,7 @@ class SequenceDataset(data.Dataset):
         time_stamps = self.time_step
 
         # compute the time stamp corresponding to the beginning of the action
-        end_time_stamp = point / self.fps
+        end_time_stamp = point / self.annotations_fps
 
         # subtract time stamps to the timestamp of the last frame
         end_time_stamp = end_time_stamp - time_stamps
@@ -194,8 +192,10 @@ class SequenceDataset(data.Dataset):
             return None, None
 
         # Spanning snippets
-        end_spanning = np.floor(end_time_stamp * self.fps).astype(int)
-        start_spanning = max(end_spanning - (self.spanning_sec * self.fps), 0)
+        end_spanning = np.floor(end_time_stamp * self.annotations_fps).astype(int)
+        start_spanning = max(
+            end_spanning - (self.spanning_sec * self.annotations_fps), 0
+        )
 
         # different spanning granularities (scale) for spanning feature
         select_spanning_frames1 = np.linspace(
@@ -217,10 +217,10 @@ class SequenceDataset(data.Dataset):
         # Recent snippets
         end_recent = end_spanning
         # different temporal granularities for recent feature
-        start_recent1 = max(end_recent - self.recent_sec1 * self.fps, 0)
-        start_recent2 = max(end_recent - self.recent_sec2 * self.fps, 0)
-        start_recent3 = max(end_recent - self.recent_sec3 * self.fps, 0)
-        start_recent4 = max(end_recent - self.recent_sec4 * self.fps, 0)
+        start_recent1 = max(end_recent - self.recent_sec1 * self.annotations_fps, 0)
+        start_recent2 = max(end_recent - self.recent_sec2 * self.annotations_fps, 0)
+        start_recent3 = max(end_recent - self.recent_sec3 * self.annotations_fps, 0)
+        start_recent4 = max(end_recent - self.recent_sec4 * self.annotations_fps, 0)
 
         select_recent_frames1 = np.linspace(
             start_recent1, end_recent, self.recent_dim + 1, dtype=int
@@ -255,11 +255,18 @@ class SequenceDataset(data.Dataset):
 
     def __get_frames(self, frames, video):
         """format file names using the image template"""
-        vi = video.split("/")[-1]  # + .mp4
+        divided_video = video.split("/")
+        sequence = divided_video[-2]
+        vi = divided_video[-1]  # + .mp4
+        offset = self.offsets[sequence][vi] if self.offsets is not None else 0
         frames = np.array(
             list(
                 map(
-                    lambda x: video + "/" + vi + "_" + self.img_tmpl.format(x + 1),
+                    lambda x: video
+                    + "/"
+                    + vi
+                    + "_"
+                    + self.img_tmpl.format(self.map_frame(x, offset)),
                     frames,
                 )
             )
@@ -280,7 +287,7 @@ class SequenceDataset(data.Dataset):
 
         # get spanning and recent frames
         recent_frames, spanning_frames = self.__get_snippet_features(
-            video.start, video.path
+            video.start_frame, video.path
         )
 
         # return a dictionary containing the id of the current sequence

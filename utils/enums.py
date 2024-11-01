@@ -35,3 +35,18 @@ class SourceMode(Enum):
 class PathType(Enum):
     FILE = "FILE"
     DIR = "DIRECTORY"
+
+
+class SimpleSplits(Enum):
+    TRAIN = "train"
+    VAL = "validation"
+    TEST = "test"
+
+
+class ComposedSplit(Enum):
+    TRAINVAL = "trainval"
+
+
+class ChallengeSplits(Enum):
+    VAL_CHALLENGE = "validation_challenge"
+    TEST_CHALLENGE = "test_challenge"

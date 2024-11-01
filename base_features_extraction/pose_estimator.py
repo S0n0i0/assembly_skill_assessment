@@ -50,7 +50,7 @@ class PoseEstimator:
                     self.pose_estimation = ChannelHandler(
                         SensorMode.OFFLINE_DUMP,
                         pose_source.data,
-                        pose_source.path,
+                        None,
                         pose_source.new_dump,
                     )
                 else:
