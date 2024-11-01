@@ -204,7 +204,7 @@ def move_person(
 
 
 def write_split_challenge(split: str):
-    global target_splits_directory
+    global target_splits_directory, first_lines, data, splits_order
 
     with open(
         os.path.join(target_splits_directory, f"{split}_challenge.csv"), "w"

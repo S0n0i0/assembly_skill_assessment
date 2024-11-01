@@ -4,6 +4,23 @@ import csv
 from utils.constants import first_lines
 
 
+def write_split_challenge(source_path, destination_path, split):
+    with open(os.path.join(source_path, f"{split}.csv"), "r") as f:
+        csv_reader = csv.reader(f)
+        with open(
+            os.path.join(destination_path, f"{split}_challenge.csv"), "w", newline=""
+        ) as f:
+            csv_writer = csv.writer(f)
+            # Write header of csv_reader
+            csv_writer.writerow(next(csv_reader))
+            id = -1
+            for row in csv_reader:
+                if row[0] != id:
+                    id = row[0]
+                    sequence = row[1].split("/")[0]
+                    csv_writer.writerow([id, sequence] + row[2:])
+
+
 def create_grouped_csv(
     splits,
     coarse_annotations_path,
@@ -13,6 +30,7 @@ def create_grouped_csv(
     max_group_duration,
     min_group_duration,
     skill_aggregations,
+    additional_splits,
 ):
     coarse_labels_dir = os.path.join(coarse_annotations_path, "coarse_labels")
     coarse_splits_dir = os.path.join(coarse_annotations_path, "coarse_splits")
@@ -159,6 +177,28 @@ def create_grouped_csv(
                             )
                     id += 1
 
+    # Creates additional splits
+    if additional_splits["trainval"]:
+        with open(
+            os.path.join(skill_evaluation_path, f"skill_splits/train.csv"), "r"
+        ) as f:
+            train_lines = f.readlines()
+        with open(
+            os.path.join(skill_evaluation_path, f"skill_splits/validation.csv"), "r"
+        ) as f:
+            validation_lines = f.readlines()[1:]
+        with open(
+            os.path.join(skill_evaluation_path, f"skill_splits/trainval.csv"), "w"
+        ) as f:
+            f.writelines(train_lines)
+            f.writelines(validation_lines)
+    if additional_splits["validation_challenge"]:
+        skill_splits_path = os.path.join(skill_evaluation_path, "skill_splits")
+        write_split_challenge(skill_splits_path, skill_splits_path, "validation")
+    if additional_splits["test_challenge"]:
+        skill_splits_path = os.path.join(skill_evaluation_path, "skill_splits")
+        write_split_challenge(skill_splits_path, skill_splits_path, "test")
+
 
 # Find the row with the same start_frame of actual_line[2]. Then, check if all the rows until the row with the same end_frame of actual_line[3] have are contained in the actual_line[2] and actual_line[3] range
 def update_skill_statistics(
@@ -296,13 +336,18 @@ def check_split(split, skill_evaluation_path, coarse_labels_path):
 
 if __name__ == "__main__":
     splits = ["train", "validation", "test"]  # ["train", "validation", "test"]
-    coarse_annotations_path = "D:/data/assembly/annotations/coarse-annotations/"
-    skill_evaluation_path = "D:/data/assembly/annotations/skill_evaluation/"
-    sequences_path = "D:/data/assembly/videos/ego_recordings/"
+    coarse_annotations_path = "D:/data/annotations/coarse-annotations/"
+    skill_evaluation_path = "D:/data/annotations/skill_evaluation/"
+    sequences_path = "D:/data/videos/ego_recordings/"
     annotations_fps = 30  # Example FPS
-    max_group_duration = 90  # Example max group duration in seconds
-    min_group_duration = 60  # Example min group duration in seconds
+    max_group_duration = 120  # Example max group duration in seconds
+    min_group_duration = 90  # Example min group duration in seconds
     skill_mapping = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
+    additional_splits = {
+        "trainval": True,
+        "validation_challenge": True,
+        "test_challenge": True,
+    }
 
     create_grouped_csv(
         splits,
@@ -313,6 +358,7 @@ if __name__ == "__main__":
         max_group_duration,
         min_group_duration,
         skill_mapping,
+        additional_splits,
     )
 
     for split in splits:

@@ -18,6 +18,14 @@ fine_trainval_first_line = [
     "is_shared",
     "is_rgb",
 ]
+fine_test_first_line = [
+    "id",
+    "video",
+    "start_frame",
+    "end_frame",
+    "is_shared",
+    "is_rgb",
+]
 skill_trainval_first_line = ["id", "video", "start_frame", "end_frame", "skill_level"]
 first_lines = {
     "splits": {
@@ -26,22 +34,8 @@ first_lines = {
             "validation": fine_trainval_first_line,
             "trainval": fine_trainval_first_line,
             "validation_challenge": fine_trainval_first_line,
-            "test": [
-                "id",
-                "video",
-                "start_frame",
-                "end_frame",
-                "is_shared",
-                "is_rgb",
-            ],
-            "test_challenge": [
-                "id",
-                "video",
-                "start_frame",
-                "end_frame",
-                "is_shared",
-                "is_rgb",
-            ],
+            "test": fine_test_first_line,
+            "test_challenge": fine_test_first_line,
         },
         "skill": {
             "train": skill_trainval_first_line,
