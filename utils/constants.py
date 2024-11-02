@@ -1,5 +1,7 @@
 from utils.classes import LogManager
 
+debug_on = True
+
 log_manager = LogManager()
 
 fine_trainval_first_line = [
@@ -18,6 +20,7 @@ fine_trainval_first_line = [
     "is_shared",
     "is_rgb",
 ]
+
 fine_test_first_line = [
     "id",
     "video",
@@ -26,7 +29,9 @@ fine_test_first_line = [
     "is_shared",
     "is_rgb",
 ]
+
 skill_trainval_first_line = ["id", "video", "start_frame", "end_frame", "skill_level"]
+
 first_lines = {
     "splits": {
         "fine": {

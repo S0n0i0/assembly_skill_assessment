@@ -373,7 +373,7 @@ class GazeObjectTracking:
                     "Gaze target not loaded",
                     DisplayLevel.LOW,
                 )
-        elif gaze_target.mode == SourceMode.DUMP_REF:
+        elif gaze_target.mode == SourceMode.DUMP and gaze_target.is_ref:
             self.gaze_target = ChannelHandler(
                 None,
                 {},
@@ -393,9 +393,9 @@ class GazeObjectTracking:
             self.gaze_target = ChannelHandler()
 
         default = True
-        if gaze_source and object_source:
+        if gaze_source is not None and object_source is not None:
             tmp_frame = None
-            if gaze_source.mode == SourceMode.VIDEO_REF:
+            if gaze_source.mode == SourceMode.VIDEO and gaze_source.is_ref:
                 try:
                     if isinstance(gaze_source, PathSource):
                         self.camera_name, self.gaze = (
@@ -770,20 +770,23 @@ if __name__ == "__main__":
     if mode == 0:
         ed = PathSource(
             SourceMode.DUMP,
+            False,
             "../nusar-2021_action_both_9065-b05a_9095_user_id_2021-02-17_122813_e.json",
         )
         pd = PathSource(
             SourceMode.DUMP,
+            False,
             "../nusar-2021_action_both_9065-b05a_9095_user_id_2021-02-17_122813_p.json",
         )
         a = GlobalGazeTracking(ed, pd)
-        cameras_dump = PathSource(SourceMode.DUMP, "../cameras_dump.json", True)
-        gaze_dump = PathSource(SourceMode.DUMP, "../gaze_dump.json", True)
+        cameras_dump = PathSource(SourceMode.DUMP, False, "../cameras_dump.json", True)
+        gaze_dump = PathSource(SourceMode.DUMP, False, "../gaze_dump.json", True)
 
         a.compute_world_data(False, cameras_dump, gaze_dump, 2)
     elif mode == 1:
         gaze = PathSource(
-            SourceMode.VIDEO_REF,
+            SourceMode.VIDEO,
+            True,
             "data/video_examples/nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/HMC_84358933_mono10bit.mp4",
             "data/dump/gaze_dump.json",
             {
@@ -795,11 +798,12 @@ if __name__ == "__main__":
         )
         objects = PathSource(
             SourceMode.SUPPORT_DUMP,
+            False,
             "data/dump/instructions_annotations.json",
             "data/dump/objects_dump.json",
         )
         gaze_target = PathSource(
-            SourceMode.DUMP_REF, "data/dump/object_target_dump.json"
+            SourceMode.DUMP, True, "data/dump/object_target_dump.json"
         )
         gaze_target_tracker = GazeObjectTracking(
             gaze,

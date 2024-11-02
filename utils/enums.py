@@ -25,16 +25,9 @@ class SensorMode(Enum):
 
 class SourceMode(Enum):
     DUMP = "DUMP"
-    DUMP_REF = "DUMP_REF"
     SUPPORT_DUMP = "SUPPORT_DUMP"
     VIDEO = "VIDEO"
-    VIDEO_REF = "VIDEO_REF"
     MODEL = "MODEL"
-
-
-class PathType(Enum):
-    FILE = "FILE"
-    DIR = "DIRECTORY"
 
 
 class SimpleSplits(Enum):

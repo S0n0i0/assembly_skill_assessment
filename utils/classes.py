@@ -2,7 +2,7 @@ from __future__ import annotations
 import cv2
 from datetime import datetime
 
-from utils.enums import LogCode, SourceMode, SensorMode, DisplayLevel, PathType
+from utils.enums import LogCode, SourceMode, SensorMode, DisplayLevel
 from utils.functions import compute_distance
 
 
@@ -90,7 +90,7 @@ class Source:
             path (str): file path where the data source is stored
     """
 
-    def __init__(self, mode: SourceMode, params=None, new_dump=True):
+    def __init__(self, mode: SourceMode, is_ref=False, params=None, new_dump=True):
         """Initialize the Source object.
 
         Args:
@@ -98,6 +98,7 @@ class Source:
         """
 
         self.mode = mode
+        self.is_ref = is_ref
         self.new_dump = new_dump
         self.params = params
 
@@ -126,10 +127,10 @@ class PathSource(Source):
     def __init__(
         self,
         mode: SourceMode,
+        is_ref: bool = False,
         path: str | None = None,
         new_dump=True,
         params=None,
-        type: PathType = PathType.FILE,
     ):
         """Initialize the Source object.
 
@@ -138,9 +139,8 @@ class PathSource(Source):
             path (str): file path where the data source is stored
         """
 
-        super().__init__(mode, params, new_dump)
+        super().__init__(mode, is_ref, params, new_dump)
         self.path = path
-        self.type = type
 
     @staticmethod
     def compare(source1, source2):

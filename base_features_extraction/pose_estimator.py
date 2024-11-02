@@ -77,7 +77,7 @@ class PoseEstimator:
                     "Pose estimation dump not loaded",
                     DisplayLevel.LOW,
                 )
-        elif pose_source.mode == SourceMode.VIDEO_REF:
+        elif pose_source.mode == SourceMode.VIDEO and pose_source.is_ref:
             try:
                 if not isinstance(pose_source, PathSource):
                     raise ValueError("Invalid pose source")
@@ -218,7 +218,8 @@ class PoseEstimator:
 
 if __name__ == "__main__":
     pose_source = PathSource(
-        SourceMode.VIDEO_REF,
+        SourceMode.VIDEO,
+        True,
         "data/video_examples/nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/C10118_rgb.mp4",
         "data/dump/pose_dump.json",
     )

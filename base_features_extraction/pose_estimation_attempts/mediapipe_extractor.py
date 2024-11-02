@@ -270,12 +270,14 @@ if __name__ == "__main__":
 
     video_source = PathSource(
         SourceMode.VIDEO,
+        False,
         "./data/video_examples/C10118_rgb.mp4",
     )
     object_source = MediapipeSource(
         video_source,
         PathSource(
             SourceMode.DUMP,
+            False,
             "./models/mediapipe/efficientdet_lite2.tflite",
         ),
     )
@@ -283,6 +285,7 @@ if __name__ == "__main__":
         video_source,
         PathSource(
             SourceMode.DUMP,
+            False,
             "./models/mediapipe/pose_landmarker_full.task",
         ),
     )
@@ -290,6 +293,7 @@ if __name__ == "__main__":
         video_source,
         PathSource(
             SourceMode.DUMP,
+            False,
             "./models/mediapipe/hand_landmarker.task",
         ),
     )
