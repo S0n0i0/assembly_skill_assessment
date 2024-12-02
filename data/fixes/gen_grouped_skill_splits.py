@@ -1,5 +1,6 @@
 import os
 import csv
+import sys
 
 from utils.constants import first_lines
 
@@ -29,6 +30,8 @@ def create_grouped_csv(
     annotations_fps,
     max_group_duration,
     min_group_duration,
+    tolerance_group_duration,
+    join_duration,
     skill_aggregations,
     additional_splits,
 ):
@@ -38,7 +41,6 @@ def create_grouped_csv(
         os.path.join(skill_evaluation_path, f"skill_labels/skill_{i}.txt")
         for i in range(1, 6)
     ]
-    tolerance_group_duration = 2  # Tolerance to add to max_group_duration when considering merging the last group
 
     # Mapping file to skill level based on the skill_labels_path files
     file_to_skill_level = {}
@@ -49,133 +51,271 @@ def create_grouped_csv(
                 file_to_skill_level[view] = skill_aggregations[skill_level]
 
     # Process each split file
-    for split_file in os.listdir(coarse_splits_dir):
-        split = split_file.split("_")[0]
-        if split not in splits:
-            continue
+    with open(
+        os.path.join(coarse_annotations_path, "joint_labels.csv"), "w", newline=""
+    ) as joint_labels_file:
+        joint_labels_writer = csv.writer(joint_labels_file)
+        joint_labels_writer.writerow(first_lines["joint_coarse_actions"])
+        joint_id = 0
+        for split_file in os.listdir(coarse_splits_dir):
+            split = split_file.split("_")[0]
+            if split not in splits:
+                continue
 
-        split_file_path = os.path.join(coarse_splits_dir, split_file)
-        if not os.path.isfile(split_file_path):
-            continue
+            split_file_path = os.path.join(coarse_splits_dir, split_file)
+            if not os.path.isfile(split_file_path):
+                continue
 
-        with open(split_file_path, "r") as split_f:
-            file_list = [line.split("\t")[0] for line in split_f.readlines()]
+            with open(split_file_path, "r") as split_f:
+                file_list = [line.split("\t")[0] for line in split_f.readlines()]
 
-        output_csv_path = os.path.join(
-            skill_evaluation_path, f"skill_splits/{split}.csv"
-        )
-        with open(output_csv_path, "w", newline="") as csvfile:
-            csv_writer = csv.writer(csvfile)
-            csv_writer.writerow(first_lines["splits"]["skill"][split])
-            id = 0
-            for sequence in file_list:
-                coarse_file_path = os.path.join(coarse_labels_dir, sequence)
-                if not os.path.isfile(coarse_file_path):
-                    continue
+            output_csv_path = os.path.join(
+                skill_evaluation_path, f"skill_splits/{split}.csv"
+            )
+            with open(output_csv_path, "w", newline="") as csvfile:
+                csv_writer = csv.writer(csvfile)
+                csv_writer.writerow(first_lines["splits"]["skill"][split])
+                coarse_id = 0
+                for sequence in file_list:
+                    coarse_file_path = os.path.join(coarse_labels_dir, sequence)
+                    if not os.path.isfile(coarse_file_path):
+                        continue
 
-                with open(coarse_file_path, "r") as coarse_f:
-                    actions = [
-                        line.strip().split("\t") for line in coarse_f.readlines()
-                    ]
-                    actions = [
-                        (int(start), int(end), action) for start, end, action in actions
-                    ]
+                    with open(coarse_file_path, "r") as coarse_f:
+                        actions = [
+                            line.strip().split("\t") for line in coarse_f.readlines()
+                        ]
+                        actions = [
+                            (int(start), int(end), action)
+                            for start, end, action in actions
+                        ]
 
-                # Group actions based on max and min group duration
-                groups = []
-                current_group = []
+                    # Group actions based on max and min group duration
+                    groups = []
+                    current_group = []
 
-                for action in actions:
-                    start_frame, end_frame, _ = action
+                    for action in actions:
+                        start_frame, end_frame, _ = action
 
-                    if current_group:
-                        total_duration = (
-                            end_frame - current_group[0][0]
-                        ) / annotations_fps
-                        if total_duration <= max_group_duration:
-                            current_group.append(action)
+                        if current_group:
+                            total_duration = (
+                                end_frame - current_group[0][0]
+                            ) / annotations_fps
+                            if total_duration <= max_group_duration:
+                                current_group.append(action)
+                            elif len(groups) > 0:
+                                # Try to move the first actions of the current group to the previous until we can add the current action to the current group, considering tollerance for both groups
+                                tmp_group = []
+                                for tmp_action in current_group:
+                                    tmp_group.append(tmp_action)
+                                    tmp_duration = (
+                                        tmp_group[-1][1] - groups[-1][0][0]
+                                    ) / annotations_fps
+                                    current_duration = (
+                                        end_frame
+                                        - (
+                                            current_group[len(tmp_group)][0]
+                                            if len(tmp_group) < len(current_group)
+                                            else start_frame
+                                        )
+                                    ) / annotations_fps
+                                    if (
+                                        tmp_duration
+                                        <= max_group_duration + tolerance_group_duration
+                                        and tmp_duration
+                                        >= min_group_duration - tolerance_group_duration
+                                        and current_duration
+                                        <= max_group_duration + tolerance_group_duration
+                                        and current_duration
+                                        >= min_group_duration - tolerance_group_duration
+                                    ):
+                                        groups[-1].extend(tmp_group)
+                                        current_group = current_group[
+                                            len(tmp_group) :
+                                        ] + [action]
+                                        break
+                                groups.append(current_group)
+                                current_group = (
+                                    []
+                                    if current_group[-1][1] == end_frame
+                                    else [action]
+                                )
+                            else:
+                                groups.append(current_group)
+                                current_group = [action]
                         else:
-                            groups.append(current_group)
                             current_group = [action]
-                    else:
-                        current_group = [action]
 
-                # Append the last group
-                if current_group:
-                    groups.append(current_group)
+                    # Append the last group
+                    if current_group:
+                        groups.append(current_group)
 
-                # Redistribute actions to ensure all groups meet min_group_duration without overlapping
-                redistributed_groups = []
-                temp_group = []
-
-                for group in groups:
-                    group_duration = (group[-1][1] - group[0][0]) / annotations_fps
-                    if group_duration >= min_group_duration:
-                        if temp_group:
-                            redistributed_groups.append(temp_group)
-                            temp_group = []
-                        redistributed_groups.append(group)
-                    else:
-                        if not temp_group:
-                            temp_group = group
+                    # Redistribute actions to ensure all groups meet min_group_duration without overlapping
+                    redistributed_groups = []
+                    tmp_group = []
+                    for group in groups:
+                        group_duration = (group[-1][1] - group[0][0]) / annotations_fps
+                        if group_duration >= min_group_duration:
+                            if tmp_group:
+                                redistributed_groups.append(tmp_group)
+                                tmp_group = []
+                            redistributed_groups.append(group)
                         else:
-                            # Attempt to split the group and add part of it to temp_group
-                            for action in group:
-                                new_start_frame = temp_group[0][0]
-                                new_end_frame = action[1]
+                            if not tmp_group:
+                                tmp_group = group
+                            else:
+                                # Attempt to split the group and add part of it to tmp_group
+                                for action in group:
+                                    new_start_frame = tmp_group[0][0]
+                                    new_end_frame = action[1]
+                                    combined_duration = (
+                                        new_end_frame - new_start_frame
+                                    ) / annotations_fps
+
+                                    if (
+                                        combined_duration
+                                        >= min_group_duration - tolerance_group_duration
+                                    ):
+                                        redistributed_groups.append(tmp_group)
+                                        tmp_group = [action]
+                                    else:
+                                        tmp_group.append(action)
+
+                    # Append any remaining actions to ensure all groups meet the minimum duration
+                    if tmp_group:
+                        if len(redistributed_groups) > 0 and (
+                            redistributed_groups[-1][-1][1] <= tmp_group[0][0]
+                        ):
+                            # Merge temp_group with the previous group if it doesn't overlap and keeps order
+                            redistributed_groups[-1].extend(tmp_group)
+                        else:
+                            # Consider merging the last group with the previous one if within tolerance
+                            if len(redistributed_groups) > 0:
+                                last_group = redistributed_groups[-1]
                                 combined_duration = (
-                                    new_end_frame - new_start_frame
+                                    tmp_group[-1][1] - last_group[0][0]
+                                ) / annotations_fps
+                                if (
+                                    combined_duration
+                                    >= min_group_duration - tolerance_group_duration
+                                ):
+                                    redistributed_groups.append(tmp_group)
+                                else:
+                                    redistributed_groups[-1].extend(tmp_group)
+                            else:
+                                redistributed_groups.append(tmp_group)
+
+                    sequence = "_".join(sequence.split("_")[1:])[:-4]
+                    for group in redistributed_groups:
+                        # Join actions that are too short and write the joint actions to CSV
+                        joint_actions = []
+                        if len(group) > 1:
+                            i = 0
+                            while i < len(group):
+                                action = group[i]
+                                current_duration = (
+                                    action[1] - action[0]
                                 ) / annotations_fps
 
-                                if combined_duration <= max_group_duration:
-                                    temp_group.append(action)
-                                else:
-                                    redistributed_groups.append(temp_group)
-                                    temp_group = [action]
+                                if current_duration < join_duration:
+                                    # Join the action to the shortest action among the previous and the next one
+                                    # Check if the previous action was joined
+                                    joint = False
+                                    if i == 0:
+                                        # If the current action is the first one, there isn't a previous action
+                                        previous_action_duration = sys.maxsize
+                                    elif (
+                                        len(joint_actions) > 0
+                                        and joint_actions[-1][1] == action[0]
+                                    ):
+                                        previous_action_duration = (
+                                            joint_actions[-1][1] - joint_actions[-1][0]
+                                        )
+                                        joint = True
+                                    else:
+                                        previous_action_duration = (
+                                            group[i - 1][1] - group[i - 1][0]
+                                        )
 
-                # Append any remaining actions to ensure all groups meet the minimum duration
-                if temp_group:
-                    if len(redistributed_groups) > 0 and (
-                        redistributed_groups[-1][-1][1] <= temp_group[0][0]
-                    ):
-                        # Merge temp_group with the previous group if it doesn't overlap and keeps order
-                        redistributed_groups[-1].extend(temp_group)
-                    else:
-                        # Consider merging the last group with the previous one if within tolerance
-                        if len(redistributed_groups) > 0:
-                            last_group = redistributed_groups[-1]
-                            combined_duration = (
-                                temp_group[-1][1] - last_group[0][0]
-                            ) / annotations_fps
-                            if (
-                                combined_duration
-                                <= max_group_duration + tolerance_group_duration
-                            ):
-                                redistributed_groups[-1].extend(temp_group)
-                            else:
-                                redistributed_groups.append(temp_group)
-                        else:
-                            redistributed_groups.append(temp_group)
+                                    if i == len(group) - 1:
+                                        # If the current action is the last one, there isn't a next action
+                                        next_action_duration = sys.maxsize
+                                    else:
+                                        next_action_duration = (
+                                            group[i + 1][1] - group[i + 1][0]
+                                        )
 
-                # Write the redistributed groups to CSV
-                sequence = "_".join(sequence.split("_")[1:])[:-4]
-                for group in redistributed_groups:
-                    start_frame = group[0][0]
-                    end_frame = group[-1][1]
-                    skill_level = file_to_skill_level[sequence]
-                    sequence_dir = os.path.join(sequences_path, sequence)
-                    for view in os.listdir(sequence_dir):
-                        if view.endswith(".mp4"):
-                            csv_writer.writerow(
-                                [
-                                    id,
-                                    sequence + "/" + view[:-4],
-                                    start_frame,
-                                    end_frame,
-                                    skill_level,
-                                ]
-                            )
-                    id += 1
+                                    # Check if the current action should be joined with the previous or next one
+                                    if previous_action_duration < next_action_duration:
+                                        if joint:
+                                            # If the previous action was joined, update the end frame
+                                            joint_actions[-1][1] = action[1]
+                                        else:
+                                            joint_actions.append(
+                                                [
+                                                    group[i - 1][0],
+                                                    action[1],
+                                                ]
+                                            )
+                                    else:
+                                        # Find the sequence of actions to join
+                                        j = i + 1
+                                        while (
+                                            j < len(group)
+                                            and (group[j][1] - action[0])
+                                            / annotations_fps
+                                            < join_duration
+                                        ):
+                                            j += 1
+
+                                        if j < len(group):
+                                            joint_actions.append(
+                                                [action[0], group[j][1]]
+                                            )
+                                        elif len(joint_actions) > 0:
+                                            # If there are no more actions to join, update the end frame of the last action joined
+                                            joint_actions[-1][1] = group[j - 1][1]
+                                        elif i - 1 >= 0:
+                                            # If there are no more actions to join and the previous action was not joined, join the previous and the actual sequence of actions
+                                            joint_actions.append(
+                                                [group[i - 1][0], group[j - 1][1]]
+                                            )
+                                        else:
+                                            # If there are no more actions to join and no actions were joined, join the actual sequence of actions
+                                            joint_actions.append(
+                                                [action[0], group[j - 1][1]]
+                                            )
+                                        i = j  # Skip the actions that were joined
+                                i += 1
+
+                            for joint_action in joint_actions:
+                                joint_labels_writer.writerow(
+                                    [
+                                        joint_id,
+                                        sequence,
+                                        joint_action[0],
+                                        joint_action[1],
+                                    ]
+                                )
+                                joint_id += 1
+
+                        # Write the redistributed groups to CSV
+                        start_frame = group[0][0]
+                        end_frame = group[-1][1]
+                        skill_level = file_to_skill_level[sequence]
+                        sequence_dir = os.path.join(sequences_path, sequence)
+                        for view in os.listdir(sequence_dir):
+                            if view.endswith(".mp4"):
+                                csv_writer.writerow(
+                                    [
+                                        coarse_id,
+                                        sequence + "/" + view[:-4],
+                                        start_frame,
+                                        end_frame,
+                                        skill_level,
+                                    ]
+                                )
+                        coarse_id += 1
 
     # Creates additional splits
     if additional_splits["trainval"]:
@@ -340,8 +480,12 @@ if __name__ == "__main__":
     skill_evaluation_path = "D:/data/annotations/skill_evaluation/"
     sequences_path = "D:/data/videos/ego_recordings/"
     annotations_fps = 30  # Example FPS
-    max_group_duration = 120  # Example max group duration in seconds
-    min_group_duration = 90  # Example min group duration in seconds
+    max_group_duration = 60  # Example max group duration in seconds
+    min_group_duration = 40  # Example min group duration in seconds
+    tolerance_group_duration = 20  # Tolerance to add to max_group_duration and min_group_duration when considering merging groups
+    join_duration = (
+        10  # Duration in seconds to consider merging a coarse action to another one
+    )
     skill_mapping = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
     additional_splits = {
         "trainval": True,
@@ -357,6 +501,8 @@ if __name__ == "__main__":
         annotations_fps,
         max_group_duration,
         min_group_duration,
+        tolerance_group_duration,
+        join_duration,
         skill_mapping,
         additional_splits,
     )
