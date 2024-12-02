@@ -78,6 +78,7 @@ def create_grouped_csv(
                 coarse_id = 0
                 for sequence in file_list:
                     coarse_file_path = os.path.join(coarse_labels_dir, sequence)
+                    sequence = "_".join(sequence.split("_")[1:])[:-4]
                     if not os.path.isfile(coarse_file_path):
                         continue
 
@@ -90,10 +91,120 @@ def create_grouped_csv(
                             for start, end, action in actions
                         ]
 
+                    # Join actions that are too short and write the joint actions to CSV
+                    joint_actions = []
+                    if len(actions) > 1:
+                        i = 0
+                        while i < len(actions):
+                            action = actions[i]
+                            current_duration = (action[1] - action[0]) / annotations_fps
+
+                            if current_duration < join_duration:
+                                # Join the action to the shortest action among the previous and the next one
+                                # Check if the previous action was joined
+                                joint = False
+                                if i == 0:
+                                    # If the current action is the first one, there isn't a previous action
+                                    previous_action_duration = sys.maxsize
+                                elif (
+                                    len(joint_actions) > 0
+                                    and joint_actions[-1][1] == action[0]
+                                ):
+                                    previous_action_duration = (
+                                        joint_actions[-1][1] - joint_actions[-1][0]
+                                    )
+                                    joint = True
+                                else:
+                                    previous_action_duration = (
+                                        actions[i - 1][1] - actions[i - 1][0]
+                                    )
+
+                                if i == len(actions) - 1:
+                                    # If the current action is the last one, there isn't a next action
+                                    next_action_duration = sys.maxsize
+                                else:
+                                    next_action_duration = (
+                                        actions[i + 1][1] - actions[i + 1][0]
+                                    )
+
+                                # Check if the current action should be joined with the previous or next one
+                                if previous_action_duration < next_action_duration:
+                                    if joint:
+                                        # If the previous action was joined, update the end frame
+                                        joint_actions[-1][1] = action[1]
+                                    else:
+                                        joint_actions.append(
+                                            [
+                                                actions[i - 1][0],
+                                                action[1],
+                                            ]
+                                        )
+                                else:
+                                    # Find the sequence of actions to join
+                                    j = i + 1
+                                    while (
+                                        j < len(actions)
+                                        and (actions[j][1] - action[0])
+                                        / annotations_fps
+                                        < join_duration
+                                    ):
+                                        j += 1
+
+                                    if j < len(actions):
+                                        joint_actions.append([action[0], actions[j][1]])
+                                    elif len(joint_actions) > 0:
+                                        # If there are no more actions to join, update the end frame of the last action joined
+                                        joint_actions[-1][1] = actions[j - 1][1]
+                                    elif i - 1 >= 0:
+                                        # If there are no more actions to join and the previous action was not joined, join the previous and the actual sequence of actions
+                                        joint_actions.append(
+                                            [actions[i - 1][0], actions[j - 1][1]]
+                                        )
+                                    else:
+                                        # If there are no more actions to join and no actions were joined, join the actual sequence of actions
+                                        joint_actions.append(
+                                            [action[0], actions[j - 1][1]]
+                                        )
+                                    i = j  # Skip the actions that were joined
+                            i += 1
+
+                        for joint_action in joint_actions:
+                            joint_labels_writer.writerow(
+                                [
+                                    joint_id,
+                                    sequence,
+                                    joint_action[0],
+                                    joint_action[1],
+                                ]
+                            )
+                            joint_id += 1
+
+                        if len(joint_actions) > 0:
+                            i = 0
+                            j = 0
+                            # Remove actions that are contained in the joint actions and replace them with correspondent joint action
+                            last_end_frame = -1
+                            while i < len(actions) and j < len(joint_actions):
+                                if (
+                                    actions[i][0] >= joint_actions[j][0]
+                                    and actions[i][0] < joint_actions[j][1]
+                                ):
+                                    last_end_frame = actions.pop(i)[1]
+                                else:
+                                    i += 1
+
+                                if last_end_frame == joint_actions[j][1]:
+                                    actions.insert(
+                                        i,
+                                        (joint_actions[j][0], joint_actions[j][1], ""),
+                                    )
+                                    i += 1
+                                    j += 1
+                                    last_end_frame = -1
+
                     # Group actions based on max and min group duration
                     groups = []
                     current_group = []
-
                     for action in actions:
                         start_frame, end_frame, _ = action
 
@@ -205,101 +316,8 @@ def create_grouped_csv(
                             else:
                                 redistributed_groups.append(tmp_group)
 
-                    sequence = "_".join(sequence.split("_")[1:])[:-4]
+                    # Write the redistributed groups to CSV
                     for group in redistributed_groups:
-                        # Join actions that are too short and write the joint actions to CSV
-                        joint_actions = []
-                        if len(group) > 1:
-                            i = 0
-                            while i < len(group):
-                                action = group[i]
-                                current_duration = (
-                                    action[1] - action[0]
-                                ) / annotations_fps
-
-                                if current_duration < join_duration:
-                                    # Join the action to the shortest action among the previous and the next one
-                                    # Check if the previous action was joined
-                                    joint = False
-                                    if i == 0:
-                                        # If the current action is the first one, there isn't a previous action
-                                        previous_action_duration = sys.maxsize
-                                    elif (
-                                        len(joint_actions) > 0
-                                        and joint_actions[-1][1] == action[0]
-                                    ):
-                                        previous_action_duration = (
-                                            joint_actions[-1][1] - joint_actions[-1][0]
-                                        )
-                                        joint = True
-                                    else:
-                                        previous_action_duration = (
-                                            group[i - 1][1] - group[i - 1][0]
-                                        )
-
-                                    if i == len(group) - 1:
-                                        # If the current action is the last one, there isn't a next action
-                                        next_action_duration = sys.maxsize
-                                    else:
-                                        next_action_duration = (
-                                            group[i + 1][1] - group[i + 1][0]
-                                        )
-
-                                    # Check if the current action should be joined with the previous or next one
-                                    if previous_action_duration < next_action_duration:
-                                        if joint:
-                                            # If the previous action was joined, update the end frame
-                                            joint_actions[-1][1] = action[1]
-                                        else:
-                                            joint_actions.append(
-                                                [
-                                                    group[i - 1][0],
-                                                    action[1],
-                                                ]
-                                            )
-                                    else:
-                                        # Find the sequence of actions to join
-                                        j = i + 1
-                                        while (
-                                            j < len(group)
-                                            and (group[j][1] - action[0])
-                                            / annotations_fps
-                                            < join_duration
-                                        ):
-                                            j += 1
-
-                                        if j < len(group):
-                                            joint_actions.append(
-                                                [action[0], group[j][1]]
-                                            )
-                                        elif len(joint_actions) > 0:
-                                            # If there are no more actions to join, update the end frame of the last action joined
-                                            joint_actions[-1][1] = group[j - 1][1]
-                                        elif i - 1 >= 0:
-                                            # If there are no more actions to join and the previous action was not joined, join the previous and the actual sequence of actions
-                                            joint_actions.append(
-                                                [group[i - 1][0], group[j - 1][1]]
-                                            )
-                                        else:
-                                            # If there are no more actions to join and no actions were joined, join the actual sequence of actions
-                                            joint_actions.append(
-                                                [action[0], group[j - 1][1]]
-                                            )
-                                        i = j  # Skip the actions that were joined
-                                i += 1
-
-                            for joint_action in joint_actions:
-                                joint_labels_writer.writerow(
-                                    [
-                                        joint_id,
-                                        sequence,
-                                        joint_action[0],
-                                        joint_action[1],
-                                    ]
-                                )
-                                joint_id += 1
-
-                        # Write the redistributed groups to CSV
                         start_frame = group[0][0]
                         end_frame = group[-1][1]
                         skill_level = file_to_skill_level[sequence]
