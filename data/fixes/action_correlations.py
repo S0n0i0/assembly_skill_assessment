@@ -2,9 +2,9 @@ import os
 import numpy as np
 
 splits = ["train", "validation", "test"]
-fine_labels_path = "D:/data/assembly/annotations/action_anticipation/"
-coarse_labels_path = "D:/data/assembly/annotations/coarse-annotations/coarse_labels/"
-recordings_path = "D:/data/assembly/videos/ego_recordings/"
+fine_labels_path = "D:/data/annotations/action_anticipation/"
+coarse_labels_path = "D:/data/annotations/coarse-annotations/coarse_labels/"
+recordings_path = "D:/data/videos/ego_recordings/"
 annotations_fps = 30
 
 
@@ -63,17 +63,38 @@ print("- Average number of action in a sequence:", np.mean(coarse_actions_number
 
 # Check if, for every coarse range, there are fine ranges that are contained in it and there aren't any fine ranges that are partially contained in it
 not_contained_ranges = {}
+action_ownership = {
+    "start_frame": [
+        0,
+        0,
+    ],  # [actions_w_more_frames_before_coarse, actions_w_more_frames_in_coarse]
+    "end_frame": [
+        0,
+        0,
+    ],  # [actions_w_more_frames_in_coarse, actions_w_more_frames_after_coarse]
+}
 for sequence in sequences:
     for i, coarse_range in enumerate(coarse_ranges[sequence]):
         not_contained_ranges[i] = []
         for fine_range in fine_ranges[sequence]:
-            if (
-                fine_range[0] < coarse_range[0]
-                and fine_range[1] > coarse_range[0]
-                or fine_range[0] < coarse_range[1]
-                and fine_range[1] > coarse_range[1]
-            ):
+            start_before = coarse_range[0] - fine_range[0]
+            end_in = fine_range[1] - coarse_range[0]
+            start_in = coarse_range[1] - fine_range[0]
+            end_after = fine_range[1] - coarse_range[1]
+            at_start = start_before > 0 and end_in > 0
+            at_end = start_in > 0 and end_after > 0
+            if at_start or at_end:
                 not_contained_ranges[i].append((fine_range, coarse_range))
+                if at_start:
+                    if start_before > end_in:
+                        action_ownership["start_frame"][0] += 1
+                    else:
+                        action_ownership["start_frame"][1] += 1
+                else:
+                    if start_in > end_after:
+                        action_ownership["end_frame"][0] += 1
+                    else:
+                        action_ownership["end_frame"][1] += 1
                 break
 # coarse   |     |
 # fine    | |   | |
@@ -86,6 +107,13 @@ print(
     len(actual_not_contained_ranges),
     "/",
     len(not_contained_ranges),
+)
+print("Action ownership:")
+print(
+    f"Actions at the start of the coarse action: {action_ownership['start_frame'][0]} has more frame in the previous coarse action, {action_ownership['start_frame'][1]} has more frame in this coarse action"
+)
+print(
+    f"Actions at the end of the coarse action: {action_ownership['end_frame'][0]} has more frame in this coarse action, {action_ownership['end_frame'][1]} has more frame in the following coarse action"
 )
 print(
     "Mean not contained ranges:",
