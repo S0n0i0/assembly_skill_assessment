@@ -2,6 +2,7 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 import json
+import sys
 
 from utils.classes import Sequence
 
@@ -55,6 +56,7 @@ def prev_page(event):
         plot_page(current_page)
 
 
+splits = ["train", "validation", "test"]
 use_joint = True
 directory_paths = {
     "coarse": "D:/data/annotations/coarse-annotations/",
@@ -66,6 +68,13 @@ labels_directories = {
 }
 skill_mapping = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
 skill_levels = list(set(skill_mapping.values()))
+plots = {
+    "coarse_actions_distribution": False,
+    "coarse_actions_distribution_per_people": False,
+    "person_skills": False,
+    "skill_samples": False,
+    "skill_samples_per_people": False,
+}
 
 joint_actions = {}
 if use_joint:
@@ -173,10 +182,6 @@ for skill_label in os.listdir(labels_directories["skill"]):
 # Create a dictionary person-durations from durations
 person_durations = {}
 person_skills = {}
-skill_samples = [
-    ("Skill Level", skill_levels),
-    ("Count", [0] * len(skill_levels)),
-]
 for i, (sequence, action, duration, start, person) in enumerate(durations):
     if person not in person_durations:
         person_durations[person] = [
@@ -194,77 +199,167 @@ for i, (sequence, action, duration, start, person) in enumerate(durations):
 
     person_skills[person][1][1][skill_labels[person][sequence] - 1] += 1
 
-    skill_samples[1][1][skill_labels[person][sequence] - 1] += 1
-
 for person in person_durations:
     person_durations[person][1][1].sort()
 
-actual_durations = [x[2] for x in durations]
-plt.hist(actual_durations, bins=50, edgecolor="black")
-
-plt.ylabel("Coarse actions")
-plt.xlabel("Durations")
-plt.xticks(
-    [
-        0,
-        5,
+skill_samples = {
+    split: [
+        ("Skill Level", skill_levels),
+        ("Count", [0] * len(skill_levels)),
     ]
-    + list(range(10, 130, 10))
-)
+    for split in splits
+}
+person_skill_samples = {}
+print("Skill samples:")
+skills_per_split = []
+mean_skill = {split: 0 for split in skill_samples}
+min_skill = {split: sys.maxsize for split in skill_samples}
+max_skill = {split: -1 for split in skill_samples}
+for i, split in enumerate(skill_samples):
+    with open(
+        os.path.join(directory_paths["skill"], f"skill_splits/{split}.csv")
+    ) as split_file:
+        lines = split_file.readlines()[1:]
+    for line in lines:
+        divided_line = line.strip().split(",")
+        sequence = Sequence(divided_line[1])
+        person = sequence.person
+        skill_level = int(divided_line[-1])
 
-plt.show()
+        if person not in person_skill_samples:
+            person_skill_samples[person] = [
+                ("Skill Level", skill_levels),
+                ("Count", [0] * len(skill_levels)),
+            ]
 
-# Setup People-Durations plot
-plt.figure(figsize=(14, 9))
-plt.suptitle("People-Durations", fontsize=16)
-plt.subplots_adjust(bottom=0.2)
+        skill_samples[split][1][1][skill_level - 1] += 1
+        person_skill_samples[person][1][1][skill_level - 1] += 1
 
-# Add buttons for navigation
-axprev = plt.axes([0.7, 0.05, 0.1, 0.075])
-axnext = plt.axes([0.81, 0.05, 0.1, 0.075])
-bnext = Button(axnext, "Next")
-bnext.on_clicked(next_page)
-bprev = Button(axprev, "Previous")
-bprev.on_clicked(prev_page)
+    for person in person_skill_samples:
+        samples = sum(person_skill_samples[person][1][1])
+        mean_skill[split] += samples
+        min_skill[split] = min(min_skill[split], samples)
+        max_skill[split] = max(max_skill[split], samples)
+    mean_skill[split] /= len(person_skill_samples)
 
-# Preare person durations plot
-data = person_durations
-# Number of graphs per page
-graphs_grid = (3, 3)
-graphs_per_page = graphs_grid[0] * graphs_grid[1]
-num_pages = (len(data) + graphs_per_page - 1) // graphs_per_page
-# Current page index
-current_page = 0
+    skills_per_split.append(sum(skill_samples[split][1][1]))
+    print(f"_{split}: {skills_per_split[-1]}")
+    print(f"- Mean: {mean_skill[split]}")
+    print(f"- Min: {min_skill[split]}")
+    print(f"- Max: {max_skill[split]}")
+print("Total:", sum(skills_per_split))
 
-plot_page(current_page)
+if plots["coarse_actions_distribution"]:
+    actual_durations = [x[2] for x in durations]
+    plt.hist(actual_durations, bins=50, edgecolor="black")
 
-plt.show()
+    plt.ylabel("Coarse actions")
+    plt.xlabel("Durations")
+    plt.xticks(
+        [
+            0,
+            5,
+        ]
+        + list(range(10, 150, 10))
+    )
 
-# Setup people-skills plot
-plt.figure(figsize=(14, 9))
-plt.suptitle("People-Skills", fontsize=16)
-plt.subplots_adjust(bottom=0.2)
+    plt.show()
 
-# Add buttons for navigation
-axprev = plt.axes([0.7, 0.05, 0.1, 0.075])
-axnext = plt.axes([0.81, 0.05, 0.1, 0.075])
-bnext = Button(axnext, "Next")
-bnext.on_clicked(next_page)
-bprev = Button(axprev, "Previous")
-bprev.on_clicked(prev_page)
+if plots["coarse_actions_distribution_per_people"]:
+    # Setup People-Durations plot
+    plt.figure(figsize=(14, 9))
+    plt.suptitle("People-Durations", fontsize=16)
+    plt.subplots_adjust(bottom=0.2)
 
-# Prepare person skills plot
-data = person_skills
-# Number of graphs per page
-graphs_grid = (3, 3)
-graphs_per_page = graphs_grid[0] * graphs_grid[1]
-num_pages = (len(data) + graphs_per_page - 1) // graphs_per_page
-# Current page index
-current_page = 0
+    # Add buttons for navigation
+    axprev = plt.axes([0.7, 0.05, 0.1, 0.075])
+    axnext = plt.axes([0.81, 0.05, 0.1, 0.075])
+    bnext = Button(axnext, "Next")
+    bnext.on_clicked(next_page)
+    bprev = Button(axprev, "Previous")
+    bprev.on_clicked(prev_page)
 
-plot_page(current_page)
+    # Preare person durations plot
+    data = person_durations
+    # Number of graphs per page
+    graphs_grid = (3, 3)
+    graphs_per_page = graphs_grid[0] * graphs_grid[1]
+    num_pages = (len(data) + graphs_per_page - 1) // graphs_per_page
+    # Current page index
+    current_page = 0
 
-plt.show()
+    plot_page(current_page)
+
+    plt.show()
+
+if plots["person_skills"]:
+    # Setup people-skills plot
+    plt.figure(figsize=(14, 9))
+    plt.suptitle("People-CoarseSkills", fontsize=16)
+    plt.subplots_adjust(bottom=0.2)
+
+    # Add buttons for navigation
+    axprev = plt.axes([0.7, 0.05, 0.1, 0.075])
+    axnext = plt.axes([0.81, 0.05, 0.1, 0.075])
+    bnext = Button(axnext, "Next")
+    bnext.on_clicked(next_page)
+    bprev = Button(axprev, "Previous")
+    bprev.on_clicked(prev_page)
+
+    # Prepare person skills plot
+    data = person_skills
+    # Number of graphs per page
+    graphs_grid = (3, 3)
+    graphs_per_page = graphs_grid[0] * graphs_grid[1]
+    num_pages = (len(data) + graphs_per_page - 1) // graphs_per_page
+    # Current page index
+    current_page = 0
+
+    plot_page(current_page)
+
+    plt.show()
+
+if plots["skill_samples"]:
+    # Plot bar chart for skill samples
+    plt.figure(figsize=(10, 4))
+    for i, split in enumerate(skill_samples):
+        plt.subplot(1, 3, i + 1)
+        plt.bar(skill_samples[split][0][1], skill_samples[split][1][1])
+        plt.xlabel(skill_samples[split][0][0])
+        plt.ylabel(skill_samples[split][1][0])
+        plt.title(split)
+    plt.title("Skill Samples")
+    plt.tight_layout()
+
+    plt.show()
+
+if plots["skill_samples_per_people"]:
+    # Setup people-skills plot
+    plt.figure(figsize=(14, 9))
+    plt.suptitle("People-GroupedSkills", fontsize=16)
+    plt.subplots_adjust(bottom=0.2)
+
+    # Add buttons for navigation
+    axprev = plt.axes([0.7, 0.05, 0.1, 0.075])
+    axnext = plt.axes([0.81, 0.05, 0.1, 0.075])
+    bnext = Button(axnext, "Next")
+    bnext.on_clicked(next_page)
+    bprev = Button(axprev, "Previous")
+    bprev.on_clicked(prev_page)
+
+    # Prepare person skills plot
+    data = person_skill_samples
+    # Number of graphs per page
+    graphs_grid = (3, 3)
+    graphs_per_page = graphs_grid[0] * graphs_grid[1]
+    num_pages = (len(data) + graphs_per_page - 1) // graphs_per_page
+    # Current page index
+    current_page = 0
+
+    plot_page(current_page)
+
+    plt.show()
+
 
 with open(
     os.path.join(
@@ -279,19 +374,20 @@ with open(
 with open(
     os.path.join(
         directory_paths["skill"],
-        f"skills_distribution{'_with_joints' if use_joint else ''}.json",
+        f"coarse_skills_distribution{'_with_joints' if use_joint else ''}.json",
     ),
     "w",
 ) as f:
     for i in person_skills:
         person_skills[i] = person_skills[i][1][1]
     json.dump(person_skills, f, indent=4)
-
-# Plot bar chart for skill samples
-plt.figure(figsize=(6, 4))
-plt.bar(skill_samples[0][1], skill_samples[1][1])
-plt.xlabel(skill_samples[0][0])
-plt.ylabel(skill_samples[1][0])
-plt.title("Skill Samples")
-
-plt.show()
+with open(
+    os.path.join(
+        directory_paths["skill"],
+        f"grouped_skills_distribution{'_with_joints' if use_joint else ''}.json",
+    ),
+    "w",
+) as f:
+    for i in person_skill_samples:
+        person_skill_samples[i] = person_skill_samples[i][1][1]
+    json.dump(person_skill_samples, f, indent=4)
