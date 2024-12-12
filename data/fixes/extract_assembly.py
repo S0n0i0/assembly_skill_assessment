@@ -4,22 +4,26 @@ from enum import Enum
 import shutil
 import cv2
 from tqdm import tqdm
+import sys
 
 from utils.constants import first_lines
+from utils.functions import get_view_frames_data
 
 
 class not_used_codes(Enum):
+    NO_SKILL = "no_skill_level"
     NO_COARSE = "no_coarse_annotations"
     NO_VIDEOS = "no_ego/fixed_videos"
     NO_ASSEMBLY = "no_ego/fixed_assembly"
     NO_ASSEMBLY_VIDEO = "no_assembly"
+    VIDEOS_TOO_SHORT = "ego/fixed_videos_too_short"
 
 
 def get_contrary_view(view):
     return "ego" if view == "fixed" else "fixed"
 
 
-views = ["ego", "fixed"]  # ["ego","fixed"]
+general_views = ["ego", "fixed"]  # ["ego","fixed"]
 action_getter = {
     "fine": {
         "id": lambda x, is_list=False: int(x[1] if is_list else x.split(",")[1]),
@@ -30,63 +34,75 @@ action_getter = {
         "cls": lambda x, is_list=False: x[4] if is_list else x.split(",")[4],
     },
 }
-sequences_paths = {view: f"D:/data/{view}_recordings/" for view in views}
+edit_all_if_too_short = {
+    "ego": False,
+    "fixed": True,
+}
+sequences_paths = {view: f"D:/data/old/{view}_recordings/" for view in general_views}
 sequence_fps = 15
 assembly_directories = {
-    view: f"D:/data/assembly/videos/{view}_recordings/" for view in views
+    view: f"D:/data/videos/{view}_recordings/" for view in general_views
 }
 offsets_paths = {
-    view: f"D:/data/assembly/annotations/{view}_offsets.csv" for view in views
+    view: f"D:/data/annotations/{view}_offsets.csv" for view in general_views
 }
-not_used_files_path = "D:/data/assembly/annotations/not_used_videos.csv"
+not_used_files_path = "D:/data/annotations/not_used_videos.csv"
 not_used_actions_path = {
-    "fine": "D:/data/assembly/annotations/action_anticipation/not_used_actions.csv",
-    "coarse": "D:/data/assembly/annotations/coarse-annotations/not_used_actions.csv",
+    "fine": "D:/data/annotations/action_anticipation/not_used_actions.csv",
+    "coarse": "D:/data/annotations/coarse-annotations/not_used_actions.csv",
 }
 actions_mapping_path = {
-    "fine": "D:/data/assembly/annotations/action_anticipation/actions_mapping.csv",
-    "coarse": "D:/data/assembly/annotations/coarse-annotations/actions_mapping.csv",
+    "fine": "D:/data/annotations/action_anticipation/actions_mapping.csv",
+    "coarse": "D:/data/annotations/coarse-annotations/actions_mapping.csv",
 }
 annotations_directories = {
-    "coarse": "D:/data/annotations/coarse-annotations/",
-    "fine": "D:/data/annotations/action_anticipation/",
-    "skills": "D:/data/annotations/skill_labels/",
+    "coarse": "D:/data/old/annotations/coarse-annotations/",
+    "fine": "D:/data/old/annotations/action_anticipation/",
+    "skills": "D:/data/old/annotations/skill_labels/",
 }
 assembly_annotations_directories = {
-    "coarse": "D:/data/assembly/annotations/coarse-annotations/",
-    "fine": "D:/data/assembly/annotations/action_anticipation/cropped/",
-    "skills": "D:/data/assembly/annotations/skill_labels/",
+    "coarse": "D:/data/annotations/coarse-annotations/",
+    "fine": "D:/data/annotations/action_anticipation/cropped/",
+    "skills": "D:/data/annotations/skill_evaluation/skill_labels/",
 }
 annotations_fps = 30
-include_non_cropped = False
 
 splits = ["train", "validation", "validation_challenge", "test", "test_challenge"]
 
-modes = [
-    "crop_assembly",
-    "check_views_diffs",
-]  # ["crop_assembly", "check_views_diffs"]
+extract_assembly = True
 remove_disassembly_rows = {
-    "not_used": True,
+    "labels": True,
     "splits_actions": True,
     "map_actions": True,  # Also "splits_actions" must be True
 }
 
-first_frames = {view: {} for view in views}
+frames_data = {view: {} for view in general_views}
 not_used = {}
-if "crop_assembly" in modes:
-    print("Cropping assembly videos")
-    for general_view in views:
+if extract_assembly:
+    skill_sequences = set()
+    for skill_level_file in os.listdir(annotations_directories["skills"]):
+        with open(
+            os.path.join(annotations_directories["skills"], skill_level_file)
+        ) as f:
+            for line in f.readlines():
+                skill_sequences.add(line.strip())
+
+    shorten_propagation = (
+        {}
+    )  # Contain tuples (new_end_frame, list[<general_view already propagated>]) of sequences who need the propagation of new_end_frame
+    print("Analyzing videos")
+    for general_view in general_views:
         print(f"_Processing {general_view} view")
-        first_frames[general_view] = {
+        frames_data[general_view] = {
             d: {}
             for d in os.listdir(sequences_paths[general_view])
             if os.path.isdir(os.path.join(sequences_paths[general_view], d))
         }
 
-        for sequence in tqdm(first_frames[general_view]):
+        for sequence in tqdm(frames_data[general_view]):
             if sequence in not_used:
                 continue
+            propagate_shorten = sequence in shorten_propagation
 
             videos_directory = os.path.join(sequences_paths[general_view], sequence)
             assembly_videos_directory = os.path.join(
@@ -97,134 +113,169 @@ if "crop_assembly" in modes:
                 "coarse_labels/assembly_" + sequence + ".txt",
             )
 
+            exists_skill = sequence in skill_sequences
+            if not exists_skill:
+                not_used[sequence] = not_used_codes.NO_SKILL.value
+                continue
+
             exists_coarse = os.path.exists(assembly_frames_file_path)
-            if exists_coarse or include_non_cropped:
-                first_frames[general_view][sequence] = {
-                    v: -1
+            if exists_coarse:
+                frames_data[general_view][sequence] = {
+                    v: {
+                        "first_frame": -1,
+                        "new_end_frame": (
+                            shorten_propagation[sequence][0]
+                            if sequence in shorten_propagation
+                            else -1
+                        ),
+                    }
                     for v in os.listdir(videos_directory)
                     if os.path.isfile(os.path.join(videos_directory, v))
                 }
             if not exists_coarse:
                 not_used[sequence] = not_used_codes.NO_COARSE.value
                 continue
-            if len(first_frames[general_view][sequence]) == 0:
+            if len(frames_data[general_view][sequence]) == 0:
                 not_used[sequence] = not_used_codes.NO_VIDEOS.value
                 continue
 
             if not os.path.exists(assembly_videos_directory):
                 os.makedirs(assembly_videos_directory)
             with open(assembly_frames_file_path) as assembly_frames_file:
+                lines = assembly_frames_file.readlines()
                 # map start_frame, which is at annotations_fps, to the corresponding frame in the video, which is at sequence_fps
-                start_frame = int(assembly_frames_file.readline().split("	")[0])
+                start_frame = int(lines[0].split("\t")[0])
                 if start_frame % 2 != 0:
                     start_frame -= 1  # Solve problems of desync
+                if not propagate_shorten:
+                    end_frames = [int(line.split("\t")[1]) for line in lines]
             start_second = start_frame / annotations_fps
 
-            for v in first_frames[general_view][sequence]:
+            no_assembly = {v: False for v in frames_data[general_view][sequence]}
+            for v in frames_data[general_view][sequence]:
                 video_path = os.path.join(videos_directory, v)
-                assembly_video_path = os.path.join(assembly_videos_directory, v)
                 video = cv2.VideoCapture(video_path)
+                max_frame = video.get(cv2.CAP_PROP_FRAME_COUNT)
+                video.release()
+                max_second = max_frame / sequence_fps
 
-                if start_second > video.get(cv2.CAP_PROP_FRAME_COUNT) / sequence_fps:
+                if start_second > max_second:
+                    no_assembly[v] = True
+                    continue
+                max_annotation_frame = max_second * annotations_fps
+                if not propagate_shorten and end_frames[-1] > max_annotation_frame:
+                    for end_frame in reversed(end_frames):
+                        if end_frame < max_annotation_frame:
+                            frames_data[general_view][sequence][v][
+                                "new_end_frame"
+                            ] = end_frame
+                            break
+
+                frames_data[general_view][sequence][v]["first_frame"] = start_frame
+
+            all_no_assembly = all(no_assembly.values())
+            any_no_assembly = any(no_assembly.values())
+            if all_no_assembly:
+                not_used[sequence] = not_used_codes.NO_ASSEMBLY.value
+            elif any_no_assembly:
+                for view, view_data in frames_data[general_view][sequence].items():
+                    if view_data == -1:
+                        not_used[sequence + "/" + view] = (
+                            not_used_codes.NO_ASSEMBLY_VIDEO.value
+                        )
+
+            if not propagate_shorten and not all_no_assembly:
+                new_end_frames = [
+                    frames["new_end_frame"]
+                    for frames in frames_data[general_view][sequence].values()
+                    if frames["new_end_frame"] != -1
+                ]
+                if edit_all_if_too_short[general_view] and len(new_end_frames) > 0:
+                    new_end_frame = min(new_end_frames)
+                    for v in frames_data[general_view][sequence]:
+                        frames_data[general_view][sequence][v][
+                            "new_end_frame"
+                        ] = new_end_frame
+                    shorten_propagation[sequence] = (new_end_frame, set([general_view]))
+            elif propagate_shorten:
+                shorten_propagation[sequence][1].push(general_view)
+
+    for sequence, shorten_data in shorten_propagation.items():
+        for general_view in set(general_views) - shorten_data[1]:
+            for v in frames_data[general_view][sequence]:
+                frames_data[general_view][sequence][v]["new_end_frame"] = shorten_data[
+                    0
+                ]
+
+    # Remove remaining not used sequences
+    for sequence in not_used:
+        for general_view in general_views:
+            if sequence in frames_data[general_view]:
+                del frames_data[general_view][sequence]
+
+    print("Cropping assembly videos")
+    for general_view in general_views:
+        print(f"_Processing {general_view} view")
+        for sequence in tqdm(list(frames_data[general_view].keys())):
+            if sequence in not_used:
+                del frames_data[general_view][sequence]
+                continue
+            videos_directory = os.path.join(sequences_paths[general_view], sequence)
+            for v in list(frames_data[general_view][sequence].keys()):
+                if sequence + "/" + v in not_used:
+                    del frames_data[general_view][sequence][v]
                     continue
 
-                first_frames[general_view][sequence][v] = start_frame
-
+                assembly_video_path = os.path.join(assembly_videos_directory, v)
                 if os.path.exists(assembly_video_path):
                     continue
 
                 # crop the video to the assembly
+                video_path = os.path.join(videos_directory, v)
+                start_second = (
+                    frames_data[general_view][sequence][v]["first_frame"]
+                    / annotations_fps
+                )
                 ffmpeg.input(video_path, ss=start_second).output(
                     assembly_video_path, vcodec="h264_nvenc", loglevel="quiet"
                 ).run(
                     # overwrite_output=True
                 )
 
-            no_assembly = [
-                offset == -1 for offset in first_frames[general_view][sequence].values()
-            ]
-            if all(no_assembly):
-                not_used[sequence] = not_used_codes.NO_ASSEMBLY.value
-            elif any(no_assembly):
-                for view, offset in first_frames[general_view][sequence].items():
-                    if offset == -1:
-                        not_used[sequence + "/" + view] = (
-                            not_used_codes.NO_ASSEMBLY_VIDEO.value
-                        )
-
-    for general_view in views:
+    print("Creating offet files")
+    for general_view in general_views:
         with open(offsets_paths[general_view], "w") as offsets:
             offsets.write(",".join(first_lines["offsets"]) + "\n")
-            i = 0
-            first_frames_keys = list(first_frames[general_view].keys())
-            while i < len(first_frames_keys):
-                sequence = first_frames_keys[i]
-                if sequence in not_used:
-                    del first_frames[general_view][sequence]
-                    first_frames_keys.pop(i)
-                    continue
-                j = 0
-                offsets_keys = list(first_frames[general_view][sequence].keys())
-                while j < len(offsets_keys):
-                    v = offsets_keys[j]
-                    if sequence + "/" + v in not_used:
-                        del first_frames[general_view][sequence][v]
-                        offsets_keys.pop(j)
-                        continue
+            for i, sequence in enumerate(frames_data[general_view]):
+                for v in frames_data[general_view][sequence]:
                     offsets.write(
-                        f"{i},{sequence + '/' + v},{str(first_frames[general_view][sequence][v])}\n"
+                        f"{i},"
+                        + f"{sequence + '/' + v},"
+                        + f"{str(frames_data[general_view][sequence][v]['first_frame'])},"
+                        + f"{str(frames_data[general_view][sequence][v]['new_end_frame']) if frames_data[general_view][sequence][v]['new_end_frame'] != -1 else '-'}\n"
                     )
-                    j += 1
-                i += 1
 
-sequences_to_remove = {view: set() for view in views}
-non_common = {}
-sequences = {view: set(os.listdir(assembly_directories[view])) for view in views}
-all_sequences = set.intersection(*sequences.values())
-used = all_sequences.copy()
-if "check_views_diffs" in modes:
-    print("\nChecking views differences")
+    print("_Listing not used videos")
+    with open(not_used_files_path, "w") as o:
+        for name in not_used:
+            o.write(f"{name},{not_used[name]}\n")
+else:
+    frames_data = {
+        "ego": get_view_frames_data(offsets_paths["ego"]),
+    }
 
-    # Find sequences that are in one but not the other
-    print("Sequences:")
-    for general_view in views:
-        print(f"- {general_view} sequences: {len(sequences[general_view])}")
-
-    print("Non common sequences:")
-    for vs in zip(views, views[::-1]):
-        non_common[vs[0]] = sequences[vs[0]] - sequences[vs[1]]
-        print(
-            f"- {vs[0]} sequences but not in {vs[1]} ({len(non_common[vs[0]])}):",
-            non_common[vs[0]],
-        )
-
-    for general_view in views:
-        for name in non_common[general_view]:
-            if name in not_used:
-                continue
-            not_used[name] = not_used_codes.NO_VIDEOS.value
-        sequences_to_remove[general_view] = non_common[general_view]
-    used -= set(not_used.keys())
-
-if remove_disassembly_rows["not_used"]:
-    print("\nRemoving sequences that are not used")
-    print("_Processing fine grained splits")
-    for general_view in views:
-        for name in sequences_to_remove[general_view]:
-            for file in os.listdir(
-                os.path.join(assembly_directories[general_view], name)
-            ):
-                os.remove(os.path.join(assembly_directories[general_view], name, file))
-            os.rmdir(os.path.join(assembly_directories[general_view], name))
-
+if remove_disassembly_rows["labels"]:
+    print("\nRemoving not used sequences from labels")
     print("_Processing coarse labels")
     count = 0
     disassembly_count = 0
+    shorten_count = 0
     directories = os.listdir(
         os.path.join(annotations_directories["coarse"], "coarse_labels")
     )
     for coarse_sequence in directories:
-        if "_".join(coarse_sequence.split("_")[1]) in sequences_to_remove["ego"]:
+        sequence = "_".join(coarse_sequence.split("_")[1:])[:-4]
+        if sequence not in frames_data["ego"]:
             count += 1
             continue
         elif "disassembly_" in coarse_sequence:
@@ -239,15 +290,40 @@ if remove_disassembly_rows["not_used"]:
         ):
             continue
 
-        shutil.copy(
-            os.path.join(
-                annotations_directories["coarse"], "coarse_labels/", coarse_sequence
-            ),
-            os.path.join(assembly_annotations_directories["coarse"], "coarse_labels"),
+        coarse_sequence_path = os.path.join(
+            annotations_directories["coarse"], "coarse_labels/", coarse_sequence
         )
+        assembly_coarse_sequence_path = os.path.join(
+            assembly_annotations_directories["coarse"], "coarse_labels"
+        )
+        new_end_frames = [
+            frames_data["ego"][sequence][v]["new_end_frame"]
+            for v in frames_data["ego"][sequence]
+            if frames_data["ego"][sequence][v]["new_end_frame"] != -1
+        ]
+        if len(new_end_frames) == 0:
+            shutil.copy(
+                coarse_sequence_path,
+                assembly_coarse_sequence_path,
+            )
+        else:
+            new_end_frame = (
+                max(new_end_frames)
+                if len(new_end_frames) != len(frames_data["ego"][sequence])
+                else sys.maxsize
+            )
+            with open(coarse_sequence_path) as f:
+                lines = f.readlines()
+            with open(assembly_coarse_sequence_path, "w") as f:
+                for line in lines:
+                    end_frame = line.split("\t")[1]
+                    if end_frame <= new_end_frame:
+                        f.write(line)
+            shorten_count += 1
     print(
         f"- Removed sequences ({len(directories) - disassembly_count} -> {len(directories) - disassembly_count - count}): {count}"
     )
+    print(f"- Shorten sequences: {shorten_count}")
 
     print("_Processing skills labels")
     for skill_level_file in os.listdir(annotations_directories["skills"]):
@@ -263,7 +339,7 @@ if remove_disassembly_rows["not_used"]:
         ) as f:
             for line in lines:
                 line = line.strip()
-                if line in used:
+                if line in frames_data["ego"]:
                     f.write(line + "\n")
                 else:
                     count += 1
@@ -271,41 +347,8 @@ if remove_disassembly_rows["not_used"]:
                 f"- Removed sequences of level {skill_level_file[:-4].split('_')[1]} ({len(lines)} -> {len(lines) - count}): {count}"
             )
 
-    print("_Listing not used videos")
-    with open(not_used_files_path, "w") as o:
-        for name in not_used:
-            o.write(f"{name},{not_used[name]}\n")
-
-    print("_Writing down offsets")
-    for general_view in views:
-        with open(offsets_paths[general_view]) as f:
-            lines = f.readlines()
-        with open(offsets_paths[general_view], "w") as f:
-            f.write(",".join(first_lines["offsets"]) + "\n")
-            count = -1
-            last_id = -1
-            for line in lines[1:]:
-                line = line.split(",")
-                id = int(line[0])
-                name = line[1].split("/")[0]
-                if name not in sequences_to_remove[general_view]:
-                    if id != last_id:
-                        count += 1
-                        last_id = id
-                    f.write(f"{count},{','.join(line[1:])}")
-
 if remove_disassembly_rows["splits_actions"]:
     print("\nRemoving disassembly rows from splits")
-    if len(first_frames["ego"]) == 0:
-        with open(offsets_paths["ego"]) as offsets:
-            lines = offsets.readlines()
-        for line in lines[1:]:
-            id, video, start_frame = line.split(",")
-            name, general_view = video.split("/")
-            if name not in first_frames["ego"]:
-                first_frames["ego"][name] = {}
-            first_frames["ego"][name][general_view] = int(start_frame)
-
     assembly_actions = {annotation_type: set() for annotation_type in action_getter}
     split_lines = {}
     for split in splits:
@@ -319,34 +362,35 @@ if remove_disassembly_rows["splits_actions"]:
         with open(os.path.join(annotations_directories["fine"], split + ".csv")) as f:
             lines = f.readlines()
 
-        split_lines[split] = [",".join(first_lines["splits"][split]) + "\n"]
-        count = 0
+        split_lines[split] = [",".join(first_lines["splits"]["fine"][split]) + "\n"]
         count = -1
         last_id = -1
         for line in lines[1:]:
             line = line.strip().split(",")
             id = int(line[0])
             start_frame = int(line[2])
+            end_frame = int(line[3])
 
             if "_challenge" not in split:
-                name, general_view = line[1].split("/")
+                name, view = line[1].split("/")
             else:
                 name = line[1]
-                general_view = (
+                view = (
                     (
-                        list(first_frames["ego"][name].keys())[0]
-                        if name in first_frames["ego"]
+                        list(frames_data["ego"][name].keys())[0]
+                        if name in frames_data["ego"]
                         else None
                     )
-                    if name in first_frames["ego"]
-                    and len(first_frames["ego"][name]) > 0
+                    if name in frames_data["ego"] and len(frames_data["ego"][name]) > 0
                     else None
                 )
 
             if (
-                name not in first_frames["ego"]
-                or general_view not in first_frames["ego"][name]
-                or start_frame < first_frames["ego"][name][general_view]
+                name not in frames_data["ego"]
+                or view not in frames_data["ego"][name]
+                or start_frame < frames_data["ego"][name][view]["first_frame"]
+                or frames_data["ego"][name][view]["new_end_frame"] != -1
+                and end_frame > frames_data["ego"][name][view]["new_end_frame"]
             ):
                 continue
 
@@ -364,7 +408,7 @@ if remove_disassembly_rows["splits_actions"]:
                     ),
                 ) as o:
                     assembly_actions["coarse"].update(
-                        [coarse_actions[line.split("	")[2]] for line in o.readlines()]
+                        [coarse_actions[line.split("\t")[2]] for line in o.readlines()]
                     )
             split_lines[split].append(f"{count},{','.join(line[1:])}\n")
 

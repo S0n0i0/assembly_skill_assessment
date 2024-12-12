@@ -456,6 +456,9 @@ class Sequence:
 
         return full_sequence
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
     def __hash__(self):
         return hash(str(self))
 

@@ -77,3 +77,18 @@ def get_offsets(offsets_path):
             offsets[sequence] = {}
         offsets[sequence][view[:-4]] = int(offset)
     return offsets
+
+
+def get_view_frames_data(path):
+    frames_data = {}
+    with open(path) as offsets:
+        lines = offsets.readlines()
+    for line in lines[1:]:
+        _, video, start_frame, new_end_frame = line.split(",")
+        name, general_view = video.split("/")
+        if name not in frames_data["ego"]:
+            frames_data["ego"][name] = {}
+        frames_data["ego"][name][general_view] = {
+            "first_frame": int(start_frame),
+            "new_end_frame": -1 if new_end_frame == "-" else int(new_end_frame),
+        }

@@ -58,6 +58,7 @@ first_lines = {
         "verb_cls",
         "noun_cls",
     ],
-    "offsets": ["id", "video", "start_frame"],
+    "offsets": ["id", "video", "start_frame", "new_end_frame"],
     "actions_mapping": ["id", "old_action_id", "new_action_id"],
+    "joint_coarse_actions": ["id", "video", "start_frame", "end_frame"],
 }
