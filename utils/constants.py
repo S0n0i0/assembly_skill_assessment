@@ -62,3 +62,26 @@ first_lines = {
     "actions_mapping": ["id", "old_action_id", "new_action_id"],
     "joint_coarse_actions": ["id", "video", "start_frame", "end_frame"],
 }
+
+view_dict = {
+    "fixed": {
+        "view1": "C10095_rgb",
+        "view2": "C10115_rgb",
+        "view3": "C10118_rgb",
+        "view4": "C10119_rgb",
+        "view5": "C10379_rgb",
+        "view6": "C10390_rgb",
+        "view7": "C10395_rgb",
+        "view8": "C10404_rgb",
+    },
+    "ego": {
+        "view1": ["HMC_21176875_mono10bit", "HMC_84346135_mono10bit"],
+        "view2": ["HMC_21176623_mono10bit", "HMC_84347414_mono10bit"],
+        "view3": ["HMC_21110305_mono10bit", "HMC_84355350_mono10bit"],
+        "view4": ["HMC_21179183_mono10bit", "HMC_84358933_mono10bit"],
+    },
+}
+usable_views = {
+    "fixed": ["view3"],
+    "ego": ["view1", "view2", "view3", "view4"],
+}

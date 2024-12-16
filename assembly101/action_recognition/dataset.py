@@ -84,7 +84,9 @@ class TSNDataSet(data.Dataset):
             # print(os.path.join(directory, self.image_tmpl.format(idx)))
             divided_directory = directory.split("/")
             offset = (
-                self.offsets[divided_directory[-2]][divided_directory[-1]]
+                self.offsets[divided_directory[-2]][divided_directory[-1]][
+                    "start_frame"
+                ]
                 if self.offsets is not None
                 else 0
             )

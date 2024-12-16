@@ -258,7 +258,9 @@ class SequenceDataset(data.Dataset):
         divided_video = video.split("/")
         sequence = divided_video[-2]
         vi = divided_video[-1]  # + .mp4
-        offset = self.offsets[sequence][vi] if self.offsets is not None else 0
+        offset = (
+            self.offsets[sequence][vi]["start_frame"] if self.offsets is not None else 0
+        )
         frames = np.array(
             list(
                 map(

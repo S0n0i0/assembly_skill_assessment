@@ -71,11 +71,14 @@ def get_offsets(offsets_path):
     with open(offsets_path, "r") as f:
         lines = f.readlines()
     for line in lines[1:]:
-        _, file, offset = line.strip().split(",")
+        _, file, start_frame, new_end_frame = line.strip().split(",")
         sequence, view = file.split("/")
         if sequence not in offsets:
             offsets[sequence] = {}
-        offsets[sequence][view[:-4]] = int(offset)
+        offsets[sequence][view[:-4]] = {
+            "start_frame": int(start_frame),
+            "new_end_frame": int(new_end_frame) if new_end_frame != "-" else -1,
+        }
     return offsets
 
 

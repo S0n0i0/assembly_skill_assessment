@@ -485,3 +485,37 @@ class Sequence:
     @property
     def toy(self):
         return self.sequence_list[3 if not self.coarse_title else 4].split("-")[1]
+
+
+class VideoRecord(object):
+    def __init__(self, row):
+        row = row[0].split("/") + [int(row[1]), int(row[2])] + row[3:]
+        self._data = row
+
+    @property
+    def path(self):
+        return self._data[0] + "/" + self._data[1]
+
+    @property
+    def sequence(self):
+        return Sequence(self._data[0])
+
+    @property
+    def view(self):
+        return self._data[1]
+
+    @property
+    def start_frame(self):
+        return self._data[2]
+
+    @property
+    def end_frame(self):
+        return self._data[3]
+
+    @property
+    def label(self):
+        return self._data[4]
+
+    @property
+    def id(self):
+        return self._data[5]

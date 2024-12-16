@@ -4,6 +4,8 @@ import pickle as pkl
 import os
 import numpy as np
 
+from utils.functions import get_offsets
+
 
 ################## Dataloader
 def collate_fn_override(data):
@@ -32,19 +34,6 @@ def collate_fn_override(data):
         torch.stack(labels_present_arr),
         torch.tensor(aug_chunk_size, dtype=torch.int),
     )
-
-
-def get_offsets(offsets_path):
-    offsets = {}
-    with open(offsets_path, "r") as f:
-        lines = f.readlines()
-    for line in lines[1:]:
-        _, file, offset = line.strip().split(",")
-        sequence, view = file.split("/")
-        if sequence not in offsets:
-            offsets[sequence] = {}
-        offsets[sequence][view[:-4]] = int(offset)
-    return offsets
 
 
 class AugmentDataset(torch.utils.data.Dataset):
@@ -124,7 +113,9 @@ class AugmentDataset(torch.utils.data.Dataset):
 
             recog_content, indexs = [], []
             offset = (
-                self.offsets[sequence][list(self.offsets[sequence].keys())[0]]
+                self.offsets[sequence][list(self.offsets[sequence].keys())[0]][
+                    "start_frame"
+                ]
                 if self.offsets is not None
                 else 0
             )
@@ -457,7 +448,11 @@ class AugmentDataset_test(torch.utils.data.Dataset):
         sequence = ele_dict["video_id"]
         view = ele_dict["view"]
         vid_type = ele_dict["type"]
-        offset = self.offsets[sequence][view] if self.offsets is not None else 0
+        offset = (
+            self.offsets[sequence][view]["start_frame"]
+            if self.offsets is not None
+            else 0
+        )
 
         elements = []
         with self.env[view].begin() as e:

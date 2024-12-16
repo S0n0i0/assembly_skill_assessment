@@ -28,6 +28,7 @@ class SourceMode(Enum):
     SUPPORT_DUMP = "SUPPORT_DUMP"
     VIDEO = "VIDEO"
     MODEL = "MODEL"
+    SPLIT = "SPLIT"
 
 
 class SimpleSplits(Enum):
