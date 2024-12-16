@@ -152,7 +152,10 @@ def create_grouped_csv(
 
                                     if j < len(actions):
                                         joint_actions.append([action[0], actions[j][1]])
-                                    elif len(joint_actions) > 0:
+                                    elif (
+                                        len(joint_actions) > 0
+                                        and joint_actions[-1][1] == action[0]
+                                    ):
                                         # If there are no more actions to join, update the end frame of the last action joined
                                         joint_actions[-1][1] = actions[j - 1][1]
                                     elif i - 1 >= 0:

@@ -69,11 +69,11 @@ labels_directories = {
 skill_mapping = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
 skill_levels = list(set(skill_mapping.values()))
 plots = {
-    "coarse_actions_distribution": False,
-    "coarse_actions_distribution_per_people": False,
-    "person_skills": False,
-    "skill_samples": False,
-    "skill_samples_per_people": False,
+    "coarse_actions_distribution": True,
+    "coarse_actions_distribution_per_people": True,
+    "person_skills": True,
+    "skill_samples": True,
+    "skill_samples_per_people": True,
 }
 
 joint_actions = {}
@@ -260,7 +260,7 @@ if plots["coarse_actions_distribution"]:
             0,
             5,
         ]
-        + list(range(10, 150, 10))
+        + list(range(10, 120, 10))
     )
 
     plt.show()
