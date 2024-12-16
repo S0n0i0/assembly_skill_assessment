@@ -2,10 +2,8 @@ import pandas as pd
 
 from utils.constants import first_lines
 
-fine_splits_directory = "D:/data/assembly/annotations/action_anticipation/"
-coarse_splits_directory = (
-    "D:/data/assembly/annotations/coarse-annotations/coarse_splits/"
-)
+fine_splits_directory = "D:/data/annotations/action_anticipation/"
+coarse_splits_directory = "D:/data/annotations/coarse-annotations/coarse_splits/"
 splits = ["train", "validation", "test"]
 
 for split in splits:
@@ -13,7 +11,7 @@ for split in splits:
     lines = pd.read_csv(
         fine_splits_directory + split + ".csv",
         header=0,
-        names=first_lines["splits"][split],
+        names=first_lines["splits"]["fine"][split],
     )
     for _, row in lines.iterrows():
         sequence = row["video"].split("/")[0]
@@ -28,9 +26,7 @@ for split in splits:
                     else sequence.split("_")[3].split("-")[1]
                 ),
             }
-        elif (
-            sequences[sequence]["is_shared"] == "notshared" and row["is_shared"] == 1
-        ):
+        elif sequences[sequence]["is_shared"] == "notshared" and row["is_shared"] == 1:
             sequences[sequence]["is_shared"] = "shared"
 
     with open(coarse_splits_directory + split + "_coarse_assembly.txt", "w") as f:

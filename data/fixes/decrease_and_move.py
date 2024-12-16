@@ -116,7 +116,7 @@ def decrease_fps_and_send(
 
 # Example usage
 decrease_fps_and_send(
-    "D:/data/assembly/videos/fixed_recordings/",
+    "D:/data/videos/fixed_recordings/",
     "/home/simone.compri/data/videos/fixed_recordings/",
     "no_proper_viedos.txt",
     False,

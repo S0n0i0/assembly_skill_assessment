@@ -17,10 +17,10 @@ modality = str(sys.argv[1]) if len(sys.argv) > 1 else None
 split = str(sys.argv[2]) if len(sys.argv) > 2 else None
 
 # path of the .csv annotations
-anno_path = "D:/data/assembly/annotations/action_anticipation"
+anno_path = "D:/data/annotations/action_anticipation"
 
 # output path of the generated .txt
-out_path = "D:/data/assembly/annotations/action_recognition"
+out_path = "D:/data/annotations/action_recognition"
 
 if modality is not None and split is not None:
     # load the .csv annotations

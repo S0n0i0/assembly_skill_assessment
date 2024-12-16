@@ -123,7 +123,7 @@ def copy_video_files(
 hostname = ""
 username = ""
 password = ""
-base_local_dir = "D:/data/assembly/ego_recordings"
+base_local_dir = "D:/data/ego_recordings"
 base_remote_dir = ""
 
 copy_files_to_remote(base_local_dir, base_remote_dir, hostname, username, password)

@@ -100,13 +100,6 @@ def clean_lmdb(
                             original_key = (
                                 base_key + str(original_frame_index).zfill(10) + ".jpg"
                             )
-                            """if (
-                                original_key
-                                == "nusar-2021_action_both_9013-a02_9013_user_id_2021-02-02_130807/HMC_21110305_mono10bit/HMC_21110305_mono10bit_0000017292.jpg"
-                            ):
-                                cv2.VideoCapture(
-                                    sequence + "/" + camera_file_name + ".mp4"
-                                ).get(cv2.CAP_PROP_FRAME_COUNT)"""
                             new_key = base_key + str(frame_index).zfill(10) + ".jpg"
                             data = extract_by_key(etc, original_key)
                             if data is None:
@@ -131,10 +124,10 @@ def clean_lmdb(
 
 if __name__ == "__main__":
     directory_to_clean = "C:/tempa/TSM_features"
-    target_directory = "D:/data/assembly/TSM_features"
-    videos_directory = "D:/data/assembly/ego_recordings"
-    not_moved_frames_file = "D:/data/assembly/TSM_features/not_moved.csv"
-    offsets_file = "D:/data/assembly/annotations/ego_offsets.csv"
+    target_directory = "D:/data/TSM_features"
+    videos_directory = "D:/data/ego_recordings"
+    not_moved_frames_file = "D:/data/TSM_features/not_moved.csv"
+    offsets_file = "D:/data/annotations/ego_offsets.csv"
     original_fps = 30
     new_fps = 15
     offsets_fps = 30

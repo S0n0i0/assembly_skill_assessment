@@ -12,12 +12,12 @@ decrease = True
 mode = 1
 if mode == 0:
     target_path = "D:/data/ego_recordings"
-    offsets_file_path = "D:/data/assembly/annotations/ego_offsets.csv"
+    offsets_file_path = "D:/data/annotations/ego_offsets.csv"
     skip_directories = []
     is_proper = lambda f: f.find("HMC_") != -1
 elif mode == 1:
     target_path = "D:/data/fixed_recordings"
-    offsets_file_path = "D:/data/assembly/annotations/fixed_offsets.csv"
+    offsets_file_path = "D:/data/annotations/fixed_offsets.csv"
     skip_directories = []
     is_proper = lambda f: f == "C10118_rgb.mp4"
 

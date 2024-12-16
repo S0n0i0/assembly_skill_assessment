@@ -3,7 +3,7 @@ import os
 from utils.functions import all_subsets
 
 views = ["ego", "fixed"]
-video_paths = {view: f"D:/data/assembly/{view}_recordings/" for view in views}
+video_paths = {view: f"D:/data/{view}_recordings/" for view in views}
 offsets_paths = {
     view: f"D:/data/annotations/coarse-annotations/{view}_offsets.csv" for view in views
 }

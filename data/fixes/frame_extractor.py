@@ -85,8 +85,8 @@ def process_video(video, sequence, general_view, use_ffmpeg):
 
 
 views = ["fixed", "ego"]  # ["ego","fixed"]
-origin_paths = {view: f"D:/data/assembly/videos/{view}_recordings/" for view in views}
-target_paths = {view: f"D:/data/assembly/{view}_recordings/" for view in views}
+origin_paths = {view: f"D:/data/videos/{view}_recordings/" for view in views}
+target_paths = {view: f"D:/data/{view}_recordings/" for view in views}
 image_tmpl = "{:010d}.jpg"
 
 sequences = {}

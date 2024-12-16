@@ -209,7 +209,7 @@ def write_split_challenge(split: str):
     with open(
         os.path.join(target_splits_directory, f"{split}_challenge.csv"), "w"
     ) as f:
-        f.write(",".join(first_lines["splits"][split]) + "\n")
+        f.write(",".join(first_lines["splits"]["fine"][split]) + "\n")
         id = 0
         for sequence in splits_order[split]:
             person = sequence.person
@@ -252,10 +252,10 @@ def get_values(values: list[str], split: str):
 
 
 annotations_directories = {
-    "fine": "D:/data/assembly/annotations/action_anticipation/cropped",  # Splits directory
-    "skills": "D:/data/assembly/annotations/skill_labels/",  # Skills directory
+    "fine": "D:/data/annotations/action_anticipation/cropped",  # Splits directory
+    "skills": "D:/data/annotations/skill_evaluation/skill_labels/",  # Skills directory
 }
-target_splits_directory = "D:/data/assembly/annotations/action_anticipation/"
+target_splits_directory = "D:/data/annotations/action_anticipation/"
 sequence_fps = 15
 
 people_per_split = {
@@ -484,7 +484,7 @@ if save:
     # Saves new splits
     for split in splits_order:
         with open(os.path.join(target_splits_directory, f"{split}.csv"), "w") as f:
-            f.write(",".join(first_lines["splits"][split]) + "\n")
+            f.write(",".join(first_lines["splits"]["fine"][split]) + "\n")
             id = 0
             for sequence in splits_order[split]:
                 person = sequence.person

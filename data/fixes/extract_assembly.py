@@ -105,9 +105,6 @@ if extract_assembly:
             propagate_shorten = sequence in shorten_propagation
 
             videos_directory = os.path.join(sequences_paths[general_view], sequence)
-            assembly_videos_directory = os.path.join(
-                assembly_directories[general_view], sequence
-            )
             assembly_frames_file_path = os.path.join(
                 annotations_directories["coarse"],
                 "coarse_labels/assembly_" + sequence + ".txt",
@@ -139,9 +136,9 @@ if extract_assembly:
                 not_used[sequence] = not_used_codes.NO_VIDEOS.value
                 continue
 
-            if not os.path.exists(assembly_videos_directory):
-                os.makedirs(assembly_videos_directory)
-            with open(assembly_frames_file_path) as assembly_frames_file:
+            with open(
+                assembly_frames_file_path
+            ) as assembly_frames_file:  # nusar-2021_action_both_9033-b04d_9033_user_id_2021-02-18_141950
                 lines = assembly_frames_file.readlines()
                 # map start_frame, which is at annotations_fps, to the corresponding frame in the video, which is at sequence_fps
                 start_frame = int(lines[0].split("\t")[0])
@@ -220,7 +217,13 @@ if extract_assembly:
             if sequence in not_used:
                 del frames_data[general_view][sequence]
                 continue
+
             videos_directory = os.path.join(sequences_paths[general_view], sequence)
+            assembly_videos_directory = os.path.join(
+                assembly_directories[general_view], sequence
+            )
+            if not os.path.exists(assembly_videos_directory):
+                os.makedirs(assembly_videos_directory)
             for v in list(frames_data[general_view][sequence].keys()):
                 if sequence + "/" + v in not_used:
                     del frames_data[general_view][sequence][v]

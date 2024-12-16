@@ -4,16 +4,14 @@ import ffmpeg
 view = "ego"  # "ego" or "fixed"
 sequences_directory = f"D:/data/{view}_recordings/"
 sequence_fps = 15
-assembly_directory = f"D:/data/assembly/{view}_recordings/"
+assembly_directory = f"D:/data/{view}_recordings/"
 offsets_file = "D:/data/annotations/coarse-annotations/{view}_offsets.csv"
 not_used_files_path = f"D:/data/annotations/coarse-annotations/not_used_videos.csv"
 new_not_used = False
-not_used_actions_path = (
-    f"D:/data/assembly/annotations/action_anticipation/not_used_actions.csv"
-)
+not_used_actions_path = f"D:/data/annotations/action_anticipation/not_used_actions.csv"
 coarse_directory = "D:/data/annotations/coarse-annotations/coarse_labels/"
 fine_directory = "D:/data/annotations/action_anticipation/"
-assembly_fine_directory = "D:/data/assembly/annotations/action_anticipation/"
+assembly_fine_directory = "D:/data/annotations/action_anticipation/"
 annotations_fps = 30
 include_non_cropped = False
 
