@@ -287,11 +287,6 @@ for skill_level_file in os.listdir(annotations_directories["skills"]):
     ) as f:
         for line in f:
             sequence = Sequence(line.strip())
-            if (
-                sequence
-                == "nusar-2021_action_both_9011-b06b_9011_user_id_2021-02-01_154253"
-            ):
-                pass
             person = sequence.person
             skill_level = int(skill_level_file[:-4].split("_")[1])
             if person not in data:
@@ -321,7 +316,11 @@ for split in people_per_split:
             values = divided_line[2:]
             last_id = id
 
-            data[person][sequence]["views"] = [view]
+            if "views" not in data[person][sequence]:
+                data[person][sequence]["views"] = [view]
+                add_views = True
+            else:
+                add_views = False
 
             if person not in actual_splits_divisions:
                 actual_splits_divisions[person] = {s: [] for s in people_per_split}
@@ -346,7 +345,8 @@ for split in people_per_split:
         else:
             divided_line = line.strip().split(",")
             view = divided_line[1].split("/")[1]
-            data[person][sequence]["views"].append(view)
+            if add_views:
+                data[person][sequence]["views"].append(view)
 
     if last_sequence[0] != "":
         data[last_sequence[0].person][last_sequence[0]]["end_frame"] = last_sequence[1]

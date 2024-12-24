@@ -78,13 +78,13 @@ def extract_by_key(env, key):
 
 # main function
 if __name__ == "__main__":
-    camera_dir = "HMC_84346135_mono10bit"
+    camera_dir = "HMC_21176623_mono10bit"
     # load the lmdb environment from the path
-    lmdb_path = "D:/data/TSM_features/" + camera_dir
+    lmdb_path = "F:/Temp/TSM_features/" + camera_dir
 
     env = lmdb.open(lmdb_path, readonly=True, lock=False)
 
-    mode = 1
+    mode = 0
     if mode == 0:
         # extract_by_key() example
         # key = "nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/HMC_84346135_mono10bit/HMC_84346135_mono10bit_0000000001.jpg"
@@ -92,10 +92,10 @@ if __name__ == "__main__":
         # key = "nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/HMC_84346135_mono10bit/HMC_84346135_mono10bit_0000008356.jpg"
         # 0.0078125 MB
         base_key = (
-            "nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/"
+            "nusar-2021_action_both_9025-a20_9025_user_id_2021-02-03_150504/"
             + camera_dir
         )
-        video_path = "D:/data/ego_recordings/" + base_key + ".mp4"
+        video_path = "D:/data/videos/ego_recordings/" + base_key + ".mp4"
         # get the max frame number
         cap = cv2.VideoCapture(video_path)
         print("Ciao")

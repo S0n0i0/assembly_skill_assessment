@@ -501,9 +501,9 @@ if __name__ == "__main__":
     skill_evaluation_path = "D:/data/annotations/skill_evaluation/"
     sequences_path = "D:/data/videos/ego_recordings/"
     annotations_fps = 30  # Example FPS
-    max_group_duration = 60  # Example max group duration in seconds
-    min_group_duration = 40  # Example min group duration in seconds
-    tolerance_group_duration = 20  # Tolerance to add to max_group_duration and min_group_duration when considering merging groups
+    max_group_duration = 40  # Example max group duration in seconds
+    min_group_duration = 30  # Example min group duration in seconds
+    tolerance_group_duration = 10  # Tolerance to add to max_group_duration and min_group_duration when considering merging groups
     join_duration = (
         10  # Duration in seconds to consider merging a coarse action to another one
     )

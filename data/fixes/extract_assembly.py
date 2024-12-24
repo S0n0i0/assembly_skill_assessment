@@ -176,7 +176,7 @@ if extract_assembly:
                 not_used[sequence] = not_used_codes.NO_ASSEMBLY.value
             elif any_no_assembly:
                 for view, view_data in frames_data[general_view][sequence].items():
-                    if view_data == -1:
+                    if view_data["first_frame"] == -1:
                         not_used[sequence + "/" + view] = (
                             not_used_codes.NO_ASSEMBLY_VIDEO.value
                         )
@@ -494,14 +494,21 @@ if remove_disassembly_rows["splits_actions"]:
                 if remove_disassembly_rows["map_actions"]:
                     print(f"Mapping {split} actions")
                     f.write(split_lines[split][0])
+
                     for line in split_lines[split][1:]:
                         divided_line = line.split(",")
-                        a = int(divided_line[4])
-                        b = assembly_actions_mapping["fine"][a]
-                        if a == 542:
-                            pass
                         f.write(
-                            ",".join(divided_line[:4] + [str(b)] + divided_line[5:])
+                            ",".join(
+                                divided_line[:4]
+                                + [
+                                    str(
+                                        assembly_actions_mapping["fine"][
+                                            int(divided_line[4])
+                                        ]
+                                    )
+                                ]
+                                + divided_line[5:]
+                            )
                         )
                 else:
                     f.writelines(split_lines[split])
