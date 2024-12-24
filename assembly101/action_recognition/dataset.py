@@ -176,9 +176,11 @@ class TSNDataSet(data.Dataset):
         else:
             segment_indices = self._get_test_indices(record)
 
-        process_data = self.get_processed_frames(record, segment_indices)
+        original_images, process_data = self.get_processed_frames(
+            record, segment_indices
+        )
 
-        return process_data, record.label
+        return original_images, process_data, record.label
 
     def get_processed_frames(self, record, indices):
         images = list()
@@ -190,7 +192,7 @@ class TSNDataSet(data.Dataset):
                 if p < record.num_frames:
                     p += 1
 
-        return self.transform(images)
+        return images, self.transform(images)
 
     def __len__(self):
         return len(self.video_list)

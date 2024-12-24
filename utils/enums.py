@@ -27,6 +27,7 @@ class SourceMode(Enum):
     DUMP = "DUMP"
     SUPPORT_DUMP = "SUPPORT_DUMP"
     VIDEO = "VIDEO"
+    IMAGE = "IMAGE"
     MODEL = "MODEL"
     SPLIT = "SPLIT"
 

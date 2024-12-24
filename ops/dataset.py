@@ -3,6 +3,7 @@ from enum import Enum
 import os
 import pickle
 import csv
+import cv2
 
 import assembly101.action_anticipation.dataset as aa_dataset
 import assembly101.action_recognition.dataset as ar_dataset
@@ -16,6 +17,7 @@ from utils.enums import (
     ComposedSplit,
 )
 from utils.constants import debug_on, log_manager, view_dict
+from base_features_extraction.gaze_tracking import GazeObjectTracking
 
 
 class DatasetOpCode(Enum):
@@ -43,22 +45,48 @@ class CombinedDataset(Dataset):
         target_fps: int,
         offsets_paths: dict[str, PathSource],
         skill_splits_path: PathSource,
+        image_tmpl: str,
         sequence_dataset_args: PathSource | dict,
         tsn_dataset_args: PathSource | dict,
         augment_dataset_args: PathSource | dict,
+        pose_source: PathSource,
         object_source: PathSource | None = None,
         gaze_source: PathSource | None = None,
         gaze_target: PathSource | None = None,
-        pose_source: PathSource | None = None,
     ):
         global view_dict
 
-        try:
-            support_generated = False
+        # try:
+        if True:
+            self.annotations_fps = annotations_fps
+            self.target_fps = target_fps
+            self.image_tmpl = image_tmpl
+            self.offsets: dict[str, dict[str, dict[str, int]]] = {}
+            for view_type in view_dict.keys():
+                self.offsets[view_type] = {}
+                with open(offsets_paths[view_type].path, "r") as f:
+                    reader = csv.reader(f)
+                    next(reader)
+                    for row in reader:
+                        self.offsets[view_type][row[1]] = {
+                            "start_frame": int(row[2]),
+                            "new_end_frame": int(row[3]) if row[3] != "-" else -1,
+                        }
+
             self.dump_status = {}
             if isinstance(sequence_dataset_args, PathSource):
                 self.sequence_dataset = pickle.load(
                     open(sequence_dataset_args.path, "rb")
+                )
+                # TODO (3): da implementare quando ci sarà il dump
+                fine_support, fine_support_order = self.gen_supports(
+                    self.tsn_dataset.video_list,
+                    lambda item: item.path.split("/")[0],
+                    lambda item: item.path.split("/")[1],
+                    lambda item: item.start_frame,
+                    lambda item: item.num_frames
+                    + item.start_frame
+                    - 1,  # 1 = modifier in gen_fine_labels.py
                 )
                 self.dump_status["sequence_dataset"] = {
                     "is_dump": True,
@@ -75,14 +103,13 @@ class CombinedDataset(Dataset):
                 self.sequence_dataset = aa_dataset.SequenceDataset(
                     **sequence_dataset_args
                 )
-                self.fine_support, self.fine_support_order = self.gen_supports(
+                fine_support, fine_support_order = self.gen_supports(
                     self.sequence_dataset.video_list,
                     lambda item: item.path.split("/")[0],
                     lambda item: item.path.split("/")[1],
                     lambda item: item.start_frame,
                     lambda item: item.end_frame,
                 )
-                support_generated = True
                 self.dump_status["sequence_dataset"] = {
                     "is_dump": False,
                     "is_support": False,
@@ -109,17 +136,6 @@ class CombinedDataset(Dataset):
                 )
             else:
                 self.tsn_dataset = ar_dataset.TSNDataSet(**tsn_dataset_args)
-                if not support_generated:
-                    self.fine_support, self.fine_support_order = self.gen_supports(
-                        self.tsn_dataset.video_list,
-                        lambda item: item.path.split("/")[0],
-                        lambda item: item.path.split("/")[1],
-                        lambda item: item.start_frame,
-                        lambda item: item.num_frames
-                        + item.start_frame
-                        - 1,  # 1 = modifier in gen_fine_labels.py
-                    )
-                    support_generated = True
                 self.dump_status["tsn_dataset"] = {
                     "is_dump": False,
                     "is_support": False,
@@ -131,14 +147,19 @@ class CombinedDataset(Dataset):
                     "Loaded Action recognition database successfully",
                     DisplayLevel.HIGH,
                 )
-            if not support_generated:
-                self.fine_support, self.fine_support_order = None, None
 
             if isinstance(augment_dataset_args, PathSource):
                 self.augment_dataset = pickle.load(
                     open(augment_dataset_args.path, "rb")
                 )
-                self.coarse_support, self.coarse_order_support = None, None
+                # TODO (3): da implementare quando ci sarà il dump
+                coarse_support, coarse_order_support = self.gen_supports(
+                    self.augment_dataset.data,
+                    lambda item: item["video_id"],
+                    lambda item: item["view"],
+                    lambda item: item["st_frame"],
+                    lambda item: item["end_frame"],
+                )
                 self.dump_status["augment_dataset"] = {
                     "is_dump": True,
                     "is_support": False,
@@ -154,12 +175,13 @@ class CombinedDataset(Dataset):
                 self.augment_dataset = tas_dataset.AugmentDataset(
                     **augment_dataset_args
                 )
-                self.coarse_support, self.coarse_order_support = self.gen_supports(
+                coarse_support, coarse_order_support = self.gen_supports(
                     self.augment_dataset.data,
                     lambda item: item["video_id"],
                     lambda item: item["view"],
                     lambda item: item["st_frame"],
                     lambda item: item["end_frame"],
+                    True,
                 )
                 self.dump_status["augment_dataset"] = {
                     "is_dump": False,
@@ -217,22 +239,13 @@ class CombinedDataset(Dataset):
                 self.gaze_target_dataset: dict | None = None
 
             if self.gaze_target_dataset is None:
-                if gaze_source is not None:
-                    if not (
-                        os.path.isfile(gaze_source.path)
-                        and gaze_source.mode is SourceMode.DUMP
-                    ):
-                        error_message = "Gaze source must be a dump file"
-                        log_manager.log(
-                            self.__class__.__name__,
-                            LogCode.ERROR,
-                            DatasetOpCode.GS_DUMP_LOAD.value,
-                            error_message,
-                            DisplayLevel.LOW,
-                        )
-                        raise ValueError(error_message)
-                    self.gaze_source_dataset: dict | None = pickle.load(
-                        open(gaze_source.path, "rb")
+                if (
+                    gaze_source is not None
+                    and os.path.isfile(gaze_source.path)
+                    and gaze_source.mode is SourceMode.DUMP
+                ):
+                    self.gaze_source_dataset: dict[str, dict[str, str]] | PathSource = (
+                        pickle.load(open(gaze_source.path, "rb"))
                     )
                     self.dump_status["gaze_source_dataset"] = {
                         "is_dump": True,
@@ -245,44 +258,93 @@ class CombinedDataset(Dataset):
                         "Loaded gaze source dump successfully",
                         DisplayLevel.HIGH,
                     )
-
-                if object_source is not None:
-                    if not (
-                        os.path.isfile(object_source.path)
-                        and object_source.mode
-                        in [SourceMode.DUMP, SourceMode.SUPPORT_DUMP]
-                    ):
-                        error_message = (
-                            "Object source must be a dump file"
-                            if object_source.mode is SourceMode.DUMP
-                            else "Object source support dump must be a dump file"
-                        )
-                        log_manager.log(
-                            self.__class__.__name__,
-                            LogCode.ERROR,
-                            DatasetOpCode.OS_DUMP_LOAD.value,
-                            error_message,
-                            DisplayLevel.LOW,
-                        )
-                        raise ValueError(error_message)
-                    self.object_source_dataset: dict | None = pickle.load(
-                        open(object_source.path, "rb")
+                elif (
+                    gaze_source is not None
+                    and os.path.isdir(gaze_source.path)
+                    and gaze_source.mode is SourceMode.VIDEO
+                ):
+                    self.gaze_source_dataset: dict[str, dict[str, str]] | PathSource = (
+                        gaze_source
                     )
-                    self.dump_status["object_source_dataset"] = {
-                        "is_dump": True,
-                        "is_support": object_source.mode is SourceMode.SUPPORT_DUMP,
+                    # self.gaze_source_dataset: dict[str, dict[str, str]] = {
+                    #     sequence: {
+                    #         view.replace(
+                    #             ".mp4", ""
+                    #         ): GazeObjectTracking.get_gaze_source_data(
+                    #             PathSource(
+                    #                 SourceMode.VIDEO,
+                    #                 True,
+                    #                 os.path.join(
+                    #                     gaze_source.path, sequence, view
+                    #                 ).replace("\\", "/"),
+                    #                 False,
+                    #                 gaze_source.params,
+                    #             )
+                    #         )
+                    #         for view in os.listdir(
+                    #             os.path.join(gaze_source.path, sequence)
+                    #         )
+                    #     }
+                    #     for sequence in os.listdir(pose_source.path)
+                    # }
+                    self.dump_status["gaze_source_dataset"] = {
+                        "is_dump": False,
+                        "is_support": False,
                     }
                     log_manager.log(
                         self.__class__.__name__,
                         LogCode.SUCCESS,
-                        (
-                            DatasetOpCode.OS_DUMP_LOAD.value
-                            if object_source.mode is SourceMode.DUMP
-                            else DatasetOpCode.OS_SUP_DUMP_LOAD.value
-                        ),
-                        f"Loaded object source {'support' if object_source.mode is SourceMode.SUPPORT_DUMP else ''} dump successfully",
+                        DatasetOpCode.GS_DUMP_LOAD.value,
+                        "Loaded gaze source successfully",
                         DisplayLevel.HIGH,
                     )
+                else:
+                    error_message = "Gaze source must be a dump file or a directory"
+                    log_manager.log(
+                        self.__class__.__name__,
+                        LogCode.ERROR,
+                        DatasetOpCode.GS_DUMP_LOAD.value,
+                        error_message,
+                        DisplayLevel.LOW,
+                    )
+                    raise ValueError(error_message)
+
+                if not (
+                    object_source is not None
+                    and os.path.isfile(object_source.path)
+                    and object_source.mode in [SourceMode.DUMP, SourceMode.SUPPORT_DUMP]
+                ):
+                    error_message = (
+                        "Object source must be a dump file"
+                        if object_source.mode is SourceMode.DUMP
+                        else "Object source support dump must be a dump file"
+                    )
+                    log_manager.log(
+                        self.__class__.__name__,
+                        LogCode.ERROR,
+                        DatasetOpCode.OS_DUMP_LOAD.value,
+                        error_message,
+                        DisplayLevel.LOW,
+                    )
+                    raise ValueError(error_message)
+                self.object_source_dataset: dict | None = pickle.load(
+                    open(object_source.path, "rb")
+                )
+                self.dump_status["object_source_dataset"] = {
+                    "is_dump": True,
+                    "is_support": object_source.mode is SourceMode.SUPPORT_DUMP,
+                }
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.SUCCESS,
+                    (
+                        DatasetOpCode.OS_DUMP_LOAD.value
+                        if object_source.mode is SourceMode.DUMP
+                        else DatasetOpCode.OS_SUP_DUMP_LOAD.value
+                    ),
+                    f"Loaded object source {'support' if object_source.mode is SourceMode.SUPPORT_DUMP else ''} dump successfully",
+                    DisplayLevel.HIGH,
+                )
             else:
                 self.gaze_source_dataset = None
                 self.object_source_dataset = None
@@ -295,7 +357,9 @@ class CombinedDataset(Dataset):
                     "is_support": False,
                 }
 
-            if self.gaze_target_dataset is None and object_source_path is None:
+            if (
+                self.gaze_target_dataset is None and self.object_source_dataset is None
+            ):  # self.gaze_source_dataset not needed since it is None if gaze_target_dataset is None
                 error_message = "Without gaze target dump at least object source support dump must be provided"
                 log_manager.log(
                     self.__class__.__name__,
@@ -306,21 +370,19 @@ class CombinedDataset(Dataset):
                 )
                 raise ValueError(error_message)
 
-            if pose_source is not None:
-                if not (
-                    os.path.isfile(pose_source.path)
-                    and pose_source.mode is SourceMode.DUMP
-                ):
-                    error_message = "Pose source must be a dump file"
-                    log_manager.log(
-                        self.__class__.__name__,
-                        LogCode.ERROR,
-                        DatasetOpCode.PS_DUMP_LOAD.value,
-                        error_message,
-                        DisplayLevel.LOW,
-                    )
-                    raise ValueError(error_message)
-                self.pose_source: dict = pickle.load(open(pose_source.path, "rb"))
+            if (
+                pose_source is not None
+                and os.path.isfile(pose_source.path)
+                and pose_source.mode is SourceMode.DUMP
+            ):
+                # TODO (3): da vedere list[float] in base a implementazione
+                self.pose_source_dataset: (
+                    dict[str, dict[str, list[float]]] | dict[str, str]
+                ) = pickle.load(open(pose_source.path, "rb"))
+                self.dump_status["pose_source_dataset"] = {
+                    "is_dump": True,
+                    "is_support": False,
+                }
                 log_manager.log(
                     self.__class__.__name__,
                     LogCode.SUCCESS,
@@ -328,22 +390,38 @@ class CombinedDataset(Dataset):
                     "Loaded pose source dump successfully",
                     DisplayLevel.HIGH,
                 )
-
-            self.annotations_fps = annotations_fps
-            self.target_fps = target_fps
-            self.offsets: dict[str, dict[str, dict[str, int]]] = {}
-            for view_type in view_dict.keys():
-                self.offsets[view_type] = {}
-                with open(offsets_paths[view_type].path, "r") as f:
-                    reader = csv.reader(f)
-                    next(reader)
-                    for row in reader:
-                        self.offsets[view_type][row[1]] = {
-                            "start_frame": int(row[2]),
-                            "new_end_frame": int(row[3]) if row[3] != "-" else -1,
-                        }
+            elif (
+                pose_source is not None
+                and os.path.isdir(pose_source.path)
+                and pose_source.mode is SourceMode.VIDEO
+            ):
+                self.pose_source_dataset: (
+                    dict[str, dict[str, list[float]]] | PathSource
+                ) = pose_source
+                self.dump_status["pose_source_dataset"] = {
+                    "is_dump": False,
+                    "is_support": False,
+                }
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.SUCCESS,
+                    DatasetOpCode.PS_DUMP_LOAD.value,
+                    "Loaded pose source successfully",
+                    DisplayLevel.HIGH,
+                )
+            else:
+                error_message = "Pose source must be a dump file or a directory"
+                log_manager.log(
+                    self.__class__.__name__,
+                    LogCode.ERROR,
+                    DatasetOpCode.PS_DUMP_LOAD.value,
+                    error_message,
+                    DisplayLevel.LOW,
+                )
+                raise ValueError(error_message)
 
             self.skill_data: list[VideoRecord] = []
+            self.datasets_refs: list[dict[str, list[int]]] = []
             with open(
                 os.path.join(skill_splits_path.path, split.value + ".csv"),
                 "r",
@@ -351,8 +429,68 @@ class CombinedDataset(Dataset):
                 reader = csv.reader(f)
                 next(reader)
                 for row in reader:
-                    self.skill_data.append(VideoRecord(row[1:] + [row[0]]))
-        except Exception as e:
+                    item = VideoRecord(row[1:] + [row[0]])
+                    self.skill_data.append(item)
+
+                    sequence = item.sequence
+                    view = item.view
+                    start_frame = item.start_frame
+                    end_frame = item.end_frame
+
+                    tmp_ref = {
+                        "aa_data": [],
+                        "ar_data": [],
+                        "tas_data": [],
+                    }
+                    # Takes data of Action Anticipation and Action Recognition datasets items contained in the range of start_frame and end_frame
+                    support_i = (
+                        fine_support[sequence][view][start_frame]["support_order_index"]
+                        if start_frame in fine_support[sequence][view]
+                        else 0
+                    )
+                    for i in range(support_i, len(fine_support_order[sequence][view])):
+                        if (
+                            fine_support_order[sequence][view][i] >= start_frame
+                            and fine_support_order[sequence][view][i] < end_frame
+                        ):
+                            fine_item = fine_support[sequence][view][
+                                fine_support_order[sequence][view][i]
+                            ]
+                            tmp_ref["aa_data"].append(fine_item["index"])
+                            tmp_ref["ar_data"].append(fine_item["index"])
+
+                            if fine_item["end_frame"] >= end_frame:
+                                break
+                        elif fine_support_order[sequence][view][i] > end_frame:
+                            break
+
+                    # Takes data of Temporal Action Segmentation dataset items contained in the range of start_frame and end_frame
+                    support_i = (
+                        coarse_support[sequence][view][start_frame][
+                            "support_order_index"
+                        ]
+                        if start_frame in coarse_support[sequence][view]
+                        else 0
+                    )
+                    for i in range(
+                        support_i, len(coarse_order_support[sequence][view])
+                    ):
+                        coarse_item = coarse_support[sequence][view][
+                            coarse_order_support[sequence][view][i]
+                        ]
+                        if (
+                            coarse_order_support[sequence][view][i] >= start_frame
+                            and coarse_order_support[sequence][view][i] < end_frame
+                            or coarse_item["end_frame"] > start_frame
+                            and coarse_item["end_frame"] <= end_frame
+                        ):
+                            tmp_ref["tas_data"].append(coarse_item["index"])
+
+                        if coarse_item["end_frame"] >= end_frame:
+                            break
+
+                    self.datasets_refs.append(tmp_ref)
+        """except Exception as e:
             self.gaze_source_dataset = None
             self.object_source_dataset = None
             self.gaze_target_dataset = None
@@ -368,13 +506,13 @@ class CombinedDataset(Dataset):
                 error_message,
                 DisplayLevel.LOW,
             )
-            raise ValueError(error_message)
+            raise ValueError(error_message)"""
 
     def __len__(self):
         return len(self.skill_data)
 
     def __getitem__(self, idx: int):
-        item: VideoRecord = self.skill_data[idx]
+        item = self.skill_data[idx]
         sequence = item.sequence
         view = item.view
         offset = self.offsets["ego"][f"{sequence}/{view}.mp4"][
@@ -385,41 +523,15 @@ class CombinedDataset(Dataset):
         # if end_frame > self.offsets[view][sequence]["new_end_frame"]: # In this version "end_frame" after "new_end_frame" is already cleaned
         #     end_frame = self.offsets[view][sequence]["new_end_frame"]
 
-        # Takes data of Action Anticipation and Action Recognition datasets items contained in the range of start_frame and end_frame
-        aa_data: list[aa_dataset.VideoRecord] = []
-        ar_data: list[ar_dataset.VideoRecord] = []
-        support_i = (
-            self.fine_support[sequence][view][start_frame]["support_order_index"]
-            if start_frame in self.fine_support[sequence][view]
-            else 0
-        )
-        for i in range(support_i, len(self.fine_support_order[sequence][view])):
-            if self.fine_support_order[sequence][view][i] >= start_frame:
-                fine_item = self.fine_support[sequence][view][
-                    self.fine_support_order[sequence][view][i]
-                ]
-                aa_data.append(self.sequence_dataset[fine_item["index"]])
-                ar_data.append(self.tsn_dataset[fine_item["index"]])
-
-                if fine_item["end_frame"] >= end_frame:
-                    break
-
-        # Takes data of Temporal Action Segmentation dataset items contained in the range of start_frame and end_frame
-        tas_data: list[tuple] = []
-        support_i = (
-            self.coarse_support[sequence][view][start_frame]["support_order_index"]
-            if start_frame in self.coarse_support[sequence][view]
-            else 0
-        )
-        for i in range(support_i, len(self.coarse_order_support[sequence][view])):
-            if self.coarse_order_support[sequence][view][i] >= start_frame:
-                coarse_item = self.coarse_support[sequence][view][
-                    self.coarse_order_support[sequence][view][i]
-                ]
-                tas_data.append(self.augment_dataset.data[coarse_item["index"]])
-
-                if coarse_item["end_frame"] >= end_frame:
-                    break
+        aa_data: list[dict[str, any]] = [
+            self.sequence_dataset[i] for i in self.datasets_refs[idx]["aa_data"]
+        ]
+        ar_data: list[tuple[list[any], int]] = [
+            self.tsn_dataset[i] for i in self.datasets_refs[idx]["ar_data"]
+        ]
+        tas_data: list[tuple[any]] = [
+            self.augment_dataset.data[i] for i in self.datasets_refs[idx]["tas_data"]
+        ]
 
         gaze_target_data = None
         gaze_source_data = None
@@ -430,25 +542,60 @@ class CombinedDataset(Dataset):
                 for frame in range(start_frame, end_frame)
             ]
         else:
-            gaze_source_data = []
+            original_frames = []
             object_source_data = []
             for frame in range(start_frame, end_frame):
-                str_frame = str(frame)
-                gaze_source_data.append(self.gaze_source_dataset[sequence][str_frame])
+                frame_path = PathSource(
+                    SourceMode.IMAGE,
+                    False,
+                    os.path.join(
+                        self.gaze_source_dataset.path,
+                        str(sequence),
+                        view,
+                        self.image_tmpl.format(view=view, frame=frame),
+                    ).replace("\\", "/"),
+                    False,
+                    self.gaze_source_dataset.params,
+                )
+                if (
+                    not self.dump_status["gaze_source_dataset"]["is_dump"]
+                    and self.dump_status["object_source_dataset"]["is_support"]
+                ):
+                    original_frames.append(cv2.imread(frame_path.path))
                 if (
                     not self.dump_status["object_source_dataset"]["is_support"]
-                    or str_frame in self.object_source_dataset[sequence]
+                    or frame in self.object_source_dataset[sequence]
                 ):
                     object_source_data.append(
-                        self.object_source_dataset[sequence][str_frame]
+                        self.object_source_dataset[sequence][frame]
                     )
                 else:
                     object_source_data.append(None)
+            gaze_source_data = (
+                frame_path,
+                original_frames,
+            )
 
-        pose_data = [
-            self.pose_source[sequence][str(frame)]
-            for frame in range(start_frame, end_frame)
-        ]
+        if self.dump_status["pose_source_dataset"]["is_dump"]:
+            pose_data: list[float] | list[cv2.typing.MatLike] = [
+                self.pose_source_dataset[sequence][str(frame)]
+                for frame in range(start_frame, end_frame)
+            ]
+        else:
+            pose_data: list[float] | list[cv2.typing.MatLike] = [
+                cv2.imread(
+                    os.path.join(
+                        self.pose_source_dataset.path,
+                        str(sequence),
+                        view,
+                        self.image_tmpl.format(view=view, frame=frame),
+                    ).replace("\\", "/")
+                )
+                for frame in range(start_frame, end_frame)
+                for view in os.listdir(
+                    os.path.join(self.pose_source_dataset.path, str(sequence))
+                )
+            ]
 
         return {
             "sequence": sequence,
@@ -468,13 +615,24 @@ class CombinedDataset(Dataset):
         return (i - offset) * self.target_fps // self.annotations_fps + 1
 
     def gen_supports(
-        self, source: list, sequence_fn, view_fn, start_frame_fn, end_frame_fn
+        self,
+        source: list,
+        sequence_fn,
+        view_fn,
+        start_frame_fn,
+        end_frame_fn,
+        use_offset=False,
     ):
-        support = {}
-        support_order = {}
+        support: dict[str, dict[str, dict[str, dict[str, int]]]] = {}
+        support_order: dict[str, dict[str, list[int]]] = {}
         for i, item in enumerate(source):
             sequence = sequence_fn(item)
             view = view_fn(item)
+            offset = (
+                self.offsets["ego"][f"{sequence}/{view}.mp4"]["start_frame"]
+                if use_offset
+                else 0
+            )
 
             if sequence not in support:
                 support[sequence] = {}
@@ -486,11 +644,11 @@ class CombinedDataset(Dataset):
             if view not in support_order[sequence]:
                 support_order[sequence][view] = []
 
-            start_frame = int(start_frame_fn(item))
+            start_frame = int(start_frame_fn(item)) + offset
             support[sequence][view][start_frame] = {
                 "index": i,
                 "support_order_index": len(support[sequence][view]),
-                "end_frame": int(end_frame_fn(item)),
+                "end_frame": int(end_frame_fn(item)) + offset,
             }
 
             support_order[sequence][view].append(start_frame)
@@ -583,7 +741,9 @@ if __name__ == "__main__":
     sequence_dataset_args = dotdict(
         {
             "path_to_lmdb": "D:/data/TSM_features/",
-            "path_to_csv": os.path.join(aa_args.path_to_anno, f"trainval.csv"),
+            "path_to_csv": os.path.join(aa_args.path_to_anno, f"trainval.csv").replace(
+                "\\", "/"
+            ),
             "time_step": aa_args.alpha,
             "label_type": ["verb_id", "noun_id", "action_id"],
             "img_tmpl": aa_args.img_tmpl,
@@ -686,10 +846,30 @@ if __name__ == "__main__":
         "offsets_path": "D:/data/annotations/ego_offsets.csv",
     }
 
+    gaze_source_path = PathSource(
+        SourceMode.VIDEO,
+        False,
+        "D:/data/ego_recordings",
+        False,
+        {
+            "proximity_threshold": 40,
+            "approaching_threshold": 60,
+            "coordinates_memory_size": 15,
+            "correct_directions": 10,
+        },
+    )
+
     object_source_path = PathSource(
         SourceMode.SUPPORT_DUMP,
         False,
         "D:/data/dumps/gaze_analysis/instructions_annotations.pkl",
+        False,
+    )
+
+    pose_source_path = PathSource(
+        SourceMode.VIDEO,
+        False,
+        "D:/data/fixed_recordings",
         False,
     )
 
@@ -716,10 +896,13 @@ if __name__ == "__main__":
         15,
         offsets_paths,
         skill_splits_path,
+        "{view}_{frame:010d}.jpg",
         sequence_dataset_args,
         tsn_dataset_args,
         augment_dataset_args,
+        pose_source_path,
         object_source_path,
+        gaze_source_path,
     )
 
     a = dataset[0]

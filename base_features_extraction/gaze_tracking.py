@@ -3,6 +3,7 @@ import cv2
 from enum import Enum
 import json
 import numpy as np
+import os
 
 from utils.classes import (
     BoundingBox,
@@ -526,10 +527,15 @@ class GazeObjectTracking:
         )
 
     def get_gaze_source_data(gaze_source: PathSource):
-        tmp_video = VideoReader(gaze_source.path)
-        ret, tmp_frame = tmp_video.read()
-        if not ret:
-            return None, None
+        if os.path.isfile(gaze_source.path):
+            tmp_video = VideoReader(gaze_source.path)
+            ret, tmp_frame = tmp_video.read()
+            if not ret:
+                return None, None
+        else:  # Directory
+            tmp_frame = cv2.imread(
+                os.path.join(gaze_source.path, os.listdir(gaze_source.path)[0])
+            )
         path_splitted = gaze_source.path.split("/")
         camera_name = (
             path_splitted[-1].split("_")[-2]
