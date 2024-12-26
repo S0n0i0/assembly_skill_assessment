@@ -1,14 +1,14 @@
-import atexit
 import cv2
 from enum import Enum
-import json
+import pickle
 from mmpose.apis import MMPoseInferencer
 import numpy as np
+import os
+from tqdm import tqdm
 
-from utils.classes import Source, PathSource, DataSource, ChannelHandler
+from utils.classes import PathSource
 from utils.constants import log_manager
-from utils.enums import DisplayLevel, LogCode, SensorMode, SourceMode
-from utils.functions import load_dump, np_default
+from utils.enums import DisplayLevel, LogCode, SourceMode
 
 
 class PoseOpCode(Enum):
@@ -21,118 +21,31 @@ class PoseOpCode(Enum):
 
 
 class PoseEstimator:
-    def __init__(self, pose_source: Source, show=False):
+    def __init__(self, show=False, wait_time=0):
+        self.show = show
+        self.wait_time = wait_time
 
-        default = self.set_pose(pose_source)
-        if default:
-            self.show = False
-            self.wait = None
-        else:
-            self.show = show
-            self.wait = 1
-
-        if self.is_initialized():
-            atexit.register(self.dump_data)
-
-    def set_pose(self, pose_source: Source):
-        default = True
-
-        if pose_source.mode == SourceMode.DUMP:
-            try:
-                if isinstance(pose_source, PathSource):
-                    self.pose_estimation = ChannelHandler(
-                        SensorMode.OFFLINE_DUMP,
-                        load_dump(pose_source.path),
-                        pose_source.path,
-                        pose_source.new_dump,
-                    )
-                elif isinstance(pose_source, DataSource):
-                    self.pose_estimation = ChannelHandler(
-                        SensorMode.OFFLINE_DUMP,
-                        pose_source.data,
-                        None,
-                        pose_source.new_dump,
-                    )
-                else:
-                    raise ValueError("Invalid pose source")
-
-                first_frame = list(self.pose_estimation.data.keys())[0]
-                self.camera_name = list(self.pose_estimation.data[first_frame].keys())[
-                    0
-                ]
-                self.pose_inferencer = None
-                log_manager.log(
-                    self.__class__.__name__,
-                    LogCode.SUCCESS,
-                    PoseOpCode.POSE_LOAD.value,
-                    "Dumped pose estimation loaded successfully",
-                    DisplayLevel.LOW,
-                )
-                return
-            except:
-                log_manager.log(
-                    self.__class__.__name__,
-                    LogCode.ERROR,
-                    PoseOpCode.POSE_LOAD.value,
-                    "Pose estimation dump not loaded",
-                    DisplayLevel.LOW,
-                )
-        elif pose_source.mode == SourceMode.VIDEO and pose_source.is_ref:
-            try:
-                if not isinstance(pose_source, PathSource):
-                    raise ValueError("Invalid pose source")
-                self.pose_estimation = ChannelHandler(
-                    SensorMode.OFFLINE,
-                    {},
-                    pose_source.path,
-                    pose_source.new_dump,
-                )
-                self.pose_inferencer = MMPoseInferencer("wholebody")
-                path_splitted = pose_source.path.split("/")
-                self.camera_name = (
-                    path_splitted[-1].split("_")[-2]
-                    + ":"
-                    + path_splitted[-1].split("_")[-1].split(".")[0]
-                )
-                log_manager.log(
-                    self.__class__.__name__,
-                    LogCode.SUCCESS,
-                    PoseOpCode.POSE_LOAD.value,
-                    "Pose estimation video loaded successfully",
-                    DisplayLevel.LOW,
-                )
-                default = False
-            except:
-                log_manager.log(
-                    self.__class__.__name__,
-                    LogCode.ERROR,
-                    PoseOpCode.POSE_LOAD.value,
-                    "Pose estimation video not loaded",
-                    DisplayLevel.LOW,
-                )
-
-        if default:
-            self.pose_estimation = ChannelHandler()
-            self.pose_inferencer = None
-            self.camera_name = None
-
-        return default
+        self.pose_inferencer = MMPoseInferencer("wholebody")
+        path_splitted = pose_source.path.split("/")
+        self.camera_name = (
+            path_splitted[-1].split("_")[-2]
+            + ":"
+            + path_splitted[-1].split("_")[-1].split(".")[0]
+        )
+        log_manager.log(
+            self.__class__.__name__,
+            LogCode.SUCCESS,
+            PoseOpCode.POSE_LOAD.value,
+            "Pose estimator loaded successfully",
+            DisplayLevel.LOW,
+        )
 
     def is_initialized(self):
-        return (
-            self.pose_estimation.mode != None
-            and self.camera_name != None
-            and (
-                self.pose_estimation.mode == SourceMode.DUMP
-                or self.pose_inferencer != None
-            )
-        )
+        return self.camera_name != None and self.pose_inferencer != None
 
     def inference_pose(
         self,
-        frame_index: float,
-        frame=None,
-        force=False,
+        frame: cv2.typing.MatLike,
     ):
         if not self.is_initialized():
             log_manager.log(
@@ -145,36 +58,23 @@ class PoseEstimator:
             return None
 
         person = None
-        str_frame_index = str(frame_index)
-        if self.pose_estimation.mode == SensorMode.OFFLINE_DUMP and not force:
+        try:
+            result_generator = self.pose_inferencer(
+                frame, show=self.show, wait_time=self.wait_time
+            )
+            result = next(result_generator)
+
+            # result["predictions"][0].sort(key=lambda x: x["bbox_score"], reverse=True)
+            person = result["predictions"][0][0]
             log_manager.log(
                 self.__class__.__name__,
                 LogCode.SUCCESS,
-                PoseOpCode.NOT_FORCED_DATA,
-                "Old data returned",
+                PoseOpCode.ESTIMATION.value,
+                "Pose inferenced correctly",
             )
-            person = self.pose_estimation.data[str_frame_index][self.camera_name]
-        elif self.pose_estimation.mode == SensorMode.OFFLINE and frame is not None:
-            try:
-                result_generator = self.pose_inferencer(frame, show=True, wait_time=1)
-                result = next(result_generator)
-
-                # result["predictions"][0].sort(key=lambda x: x["bbox_score"], reverse=True)
-                person = result["predictions"][0][0]
-                if person is not None:
-                    self.pose_estimation.data[str_frame_index] = {
-                        self.camera_name: person
-                    }
-                log_manager.log(
-                    self.__class__.__name__,
-                    LogCode.SUCCESS,
-                    PoseOpCode.ESTIMATION.value,
-                    "Pose inferenced correctly",
-                )
-            except:
-                pass
-
-        if person is None:
+        except KeyboardInterrupt:
+            return False
+        except:
             log_manager.log(
                 self.__class__.__name__,
                 LogCode.ERROR,
@@ -185,68 +85,102 @@ class PoseEstimator:
 
         return person
 
-    def dump_data(self):
-        outcome = False
-        gaze_dump_path = self.pose_estimation.get_dump_path()
-        if gaze_dump_path:
-            try:
-                f = open(gaze_dump_path, "w")
-                json.dump(self.pose_estimation.data, f, default=np_default)
-                f.close()
-                log_manager.log(
-                    self.__class__.__name__,
-                    LogCode.SUCCESS,
-                    PoseOpCode.POSE_DUMP.value,
-                    "Pose estimations dumped correctly",
-                    DisplayLevel.LOW,
-                )
-                outcome = True
-            except:
-                pass
 
-        if not outcome:
-            log_manager.log(
-                self.__class__.__name__,
-                LogCode.ERROR,
-                PoseOpCode.POSE_DUMP.value,
-                "Pose estimations not dumped",
-                DisplayLevel.LOW,
-            )
+def analize_video(path: str):
+    cap = cv2.VideoCapture(path)
+    analysis = [None] * int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_index = 0
+    # Loop through the video frames
+    quit = False
+    while cap.isOpened():
+        # Read a frame from the video
+        success, frame = cap.read()
 
-        return outcome
+        if success:
+            person = pose_estimator.inference_pose(frame)
+
+            if person is False:
+                quit = True
+                break
+            if person is not None:
+                analysis[frame_index] = {
+                    "keypoints": np.array([person["keypoints"]]),
+                    "keypoint_scores": np.array([person["keypoint_scores"]]),
+                }
+
+            # Break the loop if 'q' is pressed
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                quit = True
+                break
+        else:
+            break
+
+        frame_index += 1
+
+    # Release the video capture object and close the display window
+    cap.release()
+    cv2.destroyAllWindows()
+
+    return analysis, quit
 
 
 if __name__ == "__main__":
     pose_source = PathSource(
         SourceMode.VIDEO,
         True,
-        "data/video_examples/nusar-2021_action_both_9011-a01_9011_user_id_2021-02-01_153724/C10118_rgb.mp4",
-        "data/dump/pose_dump.json",
+        "D:/data/videos/fixed_recordings",
+        "D:/data/dumps/pose_estimation/pose_dump.pkl",
     )
-    pose_estimator = PoseEstimator(pose_source, show=True)
+    force = False
+    pose_estimator = PoseEstimator()
 
     if pose_estimator.is_initialized():
-        cap = cv2.VideoCapture(pose_source.path)
-        frame_index = 0
-        # Loop through the video frames
-        while cap.isOpened():
-            # Read a frame from the video
-            success, frame = cap.read()
+        if os.path.isfile(pose_source.path):
+            print("Analyzing a video")
+            analysis, _ = analize_video(pose_source.path)
+            if type(pose_source.new_dump) == str:
+                if os.path.exists(pose_source.new_dump):
+                    with open(pose_source.new_dump, "rb") as f:
+                        dump = pickle.load(f)
+                else:
+                    dump = {}
 
-            if success:
-                person = pose_estimator.inference_pose(frame_index, frame)
+                divided_path = pose_source.new_dump.split("/")
+                sequence = divided_path[-2]
+                view = divided_path[-1].replace(".mp4", "")
 
-                keypoints = np.array([person["keypoints"]])
-                keypoint_scores = np.array([person["keypoint_scores"]])
+                if sequence not in dump:
+                    dump[sequence] = {}
 
-                # Break the loop if 'q' is pressed
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
-            else:
-                break
+                dump[sequence][view] = analysis
 
-            frame_index += 1
+                with open(pose_source.new_dump, "wb") as f:
+                    pickle.dump(dump, f)
+        else:
+            print("Analyzing a directory")
+            dump = {}
+            try:
+                for sequence in tqdm(os.listdir(pose_source.path)):
+                    if sequence not in dump:
+                        dump[sequence] = {}
+                    for view in os.listdir(f"{pose_source.path}/{sequence}"):
+                        view = view.replace(".mp4", "")
+                        if (
+                            not force
+                            and view in dump[sequence]
+                            and dump[sequence][view][-1] != None
+                        ):
+                            continue
+                        dump[sequence][view], quit = analize_video(
+                            f"{pose_source.path}/{sequence}/{view}.mp4"
+                        )
+                        if quit:
+                            break
+                    if quit:
+                        break
+            except KeyboardInterrupt:
+                pass
 
-        # Release the video capture object and close the display window
-        cap.release()
-        cv2.destroyAllWindows()
+            if type(pose_source.new_dump) == str:
+                with open(pose_source.new_dump, "wb") as f:
+                    pickle.dump(dump, f)

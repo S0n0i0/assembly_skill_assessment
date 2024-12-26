@@ -90,7 +90,9 @@ class Source:
             path (str): file path where the data source is stored
     """
 
-    def __init__(self, mode: SourceMode, is_ref=False, params=None, new_dump=True):
+    def __init__(
+        self, mode: SourceMode, is_ref=False, params=None, new_dump: bool | str = True
+    ):
         """Initialize the Source object.
 
         Args:
@@ -129,7 +131,7 @@ class PathSource(Source):
         mode: SourceMode,
         is_ref: bool = False,
         path: str | None = None,
-        new_dump=True,
+        new_dump: bool | str = True,
         params=None,
     ):
         """Initialize the Source object.
@@ -157,15 +159,17 @@ class PathSource(Source):
 
 
 class DataSource(Source):
-    def __init__(self, mode: SourceMode, data=None, params=None, new_dump=True):
-        super().__init__(mode, params, new_dump)
+    def __init__(
+        self, mode: SourceMode, data=None, params=None, new_dump: str | None = None
+    ):
+        super().__init__(mode, params, new_dump if new_dump is not None else False)
         self.data = data
 
 
 class ChannelHandler:
 
     def __init__(
-        self, mode: SensorMode | None = None, data=None, ref=None, new_dump=None
+        self, mode: SensorMode | None = None, data=None, ref=None, new_dump: str = None
     ) -> None:
         self.data = data
         self.ref = ref
@@ -493,29 +497,29 @@ class VideoRecord(object):
         self._data = row
 
     @property
-    def path(self):
+    def path(self) -> str:
         return self._data[0] + "/" + self._data[1]
 
     @property
-    def sequence(self):
+    def sequence(self) -> Sequence:
         return Sequence(self._data[0])
 
     @property
-    def view(self):
+    def view(self) -> str:
         return self._data[1]
 
     @property
-    def start_frame(self):
+    def start_frame(self) -> int:
         return self._data[2]
 
     @property
-    def end_frame(self):
+    def end_frame(self) -> int:
         return self._data[3]
 
     @property
-    def label(self):
+    def label(self) -> str:
         return self._data[4]
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self._data[5]
