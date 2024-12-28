@@ -1,8 +1,13 @@
 import json
 import numpy as np
 from itertools import chain, combinations
+import os
+import pickle
+from functools import reduce
+import operator
 
 from utils.enums import SensorMode
+from utils.classes import PathSource
 
 
 def load_dump(data_path):
@@ -95,3 +100,54 @@ def get_view_frames_data(path):
             "first_frame": int(start_frame),
             "new_end_frame": -1 if new_end_frame == "-" else int(new_end_frame),
         }
+
+
+def get_dict_element(data: dict, keys: list):
+    try:
+        return reduce(operator.getitem, keys, data)
+    except:
+        return None
+
+
+def set_dict_element(data: dict, keys: list, value):
+    previous = get_dict_element(data, keys[:-1])
+
+    if previous is not None:
+        previous[keys[-1]] = value
+        return True
+
+    return False
+
+
+def add_to_dump(source: PathSource, data, keys: tuple | None = None):
+    dump_path = source.get_dump_path()
+    if os.path.exists(dump_path):
+        with open(dump_path, "rb") as f:
+            dump = pickle.load(f)
+    else:
+        dump = {}
+
+    if keys is None:
+        divided_path = dump_path.split("/")
+        keys = (divided_path[-2], divided_path[-1].replace(".mp4", ""))
+
+    # Given dump as a nested dictionary, check if every key exists, otherwhise it creates a dictionary at that key level
+    for i in range(1, len(keys)):
+        sub_list = keys[:i]
+        if get_dict_element(dump, sub_list) is None:
+            set_dict_element(dump, sub_list, {})
+    set_dict_element(dump, keys, data)
+
+    with open(dump_path, "wb") as f:
+        pickle.dump(dump, f)
+
+
+def dump_data(source: PathSource, data, force=False):
+    dump_path = source.get_dump_path()
+
+    if force:
+        with open(dump_path, "rb") as f:
+            data = pickle.load(f) | data
+
+    with open(source.get_dump_path(), "wb") as f:
+        pickle.dump(data, f)

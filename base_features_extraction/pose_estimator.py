@@ -1,6 +1,5 @@
 import cv2
 from enum import Enum
-import pickle
 from mmpose.apis import MMPoseInferencer
 import numpy as np
 import os
@@ -9,6 +8,7 @@ from tqdm import tqdm
 from utils.classes import PathSource
 from utils.constants import log_manager
 from utils.enums import DisplayLevel, LogCode, SourceMode
+from utils.functions import add_to_dump, dump_data
 
 
 class PoseOpCode(Enum):
@@ -26,12 +26,6 @@ class PoseEstimator:
         self.wait_time = wait_time
 
         self.pose_inferencer = MMPoseInferencer("wholebody")
-        path_splitted = pose_source.path.split("/")
-        self.camera_name = (
-            path_splitted[-1].split("_")[-2]
-            + ":"
-            + path_splitted[-1].split("_")[-1].split(".")[0]
-        )
         log_manager.log(
             self.__class__.__name__,
             LogCode.SUCCESS,
@@ -41,7 +35,7 @@ class PoseEstimator:
         )
 
     def is_initialized(self):
-        return self.camera_name != None and self.pose_inferencer != None
+        return self.pose_inferencer != None
 
     def inference_pose(
         self,
@@ -87,6 +81,8 @@ class PoseEstimator:
 
 
 def analize_video(path: str):
+    global pose_estimator
+
     cap = cv2.VideoCapture(path)
     analysis = [None] * int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_index = 0
@@ -138,24 +134,7 @@ if __name__ == "__main__":
         if os.path.isfile(pose_source.path):
             print("Analyzing a video")
             analysis, _ = analize_video(pose_source.path)
-            if type(pose_source.new_dump) == str:
-                if os.path.exists(pose_source.new_dump):
-                    with open(pose_source.new_dump, "rb") as f:
-                        dump = pickle.load(f)
-                else:
-                    dump = {}
-
-                divided_path = pose_source.new_dump.split("/")
-                sequence = divided_path[-2]
-                view = divided_path[-1].replace(".mp4", "")
-
-                if sequence not in dump:
-                    dump[sequence] = {}
-
-                dump[sequence][view] = analysis
-
-                with open(pose_source.new_dump, "wb") as f:
-                    pickle.dump(dump, f)
+            add_to_dump(pose_source, analysis)
         else:
             print("Analyzing a directory")
             dump = {}
@@ -181,6 +160,4 @@ if __name__ == "__main__":
             except KeyboardInterrupt:
                 pass
 
-            if type(pose_source.new_dump) == str:
-                with open(pose_source.new_dump, "wb") as f:
-                    pickle.dump(dump, f)
+            dump_data(pose_source, dump, force)

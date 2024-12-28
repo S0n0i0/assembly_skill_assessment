@@ -271,15 +271,15 @@ class CombinedDataset(Dataset):
                     #         view.replace(
                     #             ".mp4", ""
                     #         ): GazeObjectTracking.get_gaze_source_data(
-                    #             PathSource(
-                    #                 SourceMode.VIDEO,
-                    #                 True,
+                    #             cv2.imread(
                     #                 os.path.join(
-                    #                     gaze_source.path, sequence, view
-                    #                 ).replace("\\", "/"),
-                    #                 False,
-                    #                 gaze_source.params,
-                    #             )
+                    #                     gaze_source.path,
+                    #                     sequence,
+                    #                     view,
+                    #                     image_tmpl.format(view=view, frame=1),
+                    #                 ).replace("\\", "/")
+                    #             ),
+                    #             gaze_source.params,
                     #         )
                     #         for view in os.listdir(
                     #             os.path.join(gaze_source.path, sequence)

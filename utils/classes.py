@@ -157,6 +157,14 @@ class PathSource(Source):
         """
         return Source.compare(source1, source2) and source1.path == source2.path
 
+    def get_dump_path(self):
+        if isinstance(self.new_dump, str):
+            return self.new_dump
+        elif self.new_dump == True:
+            return self.path
+        else:
+            return None
+
 
 class DataSource(Source):
     def __init__(
@@ -333,7 +341,7 @@ class BoundingBox:
 
     def to_xywh(self):
         """
-        Converts the bounding box to the format [x, y, w, h].
+        Converts the bounding box to the format [x, y, w, h]. It corresponds to the format cv2.typing.Rect2d.
 
         Returns:
             list[float, float, float, float]: The bounding box in the format [x, y, w, h].
